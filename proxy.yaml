@@ -1,0 +1,24 @@
+# client -> proxyhost/asr[/post] -> http://194.8.1.235:9001/
+# client -> proxyhost/asr* -> http://194.8.1.235:9001/post*
+
+- endpoint: /asr
+  remote: 194.8.1.235:9001
+  # /post
+
+
+- endpoint: /segmenter
+  remote: 194.8.1.235:7811
+  # /translate
+
+- endpoint: /mt-lv-en
+  remote: 194.8.1.235:8000
+  # /
+
+- endpoint: /tts
+  remote: 194.8.1.234:9923
+  replacer: /api/tts~/tts/api/tts
+  # /api/tts
+
+- endpoint: /asr-ru
+  remote: 194.8.1.234:9074
+  # /post
