@@ -22,3 +22,11 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 - Compatibility mode: implement cookie based session tracking
 - Compatibility mode for legacy applications with built-in URLs: selmaproject--tts--777--5002--2022spaces.pinitree.com:7788
 - Compatibility mode: adjusting the content length parameter in the HTTP header (relevant only for content replace)
+
+# Docker Desktop for macOS Configuration
+
+To enable docker engine connection via SSH to macOS docker host, add the following line
+
+```export PATH=$PATH:/usr/local/bin```
+
+to `~/.bashrc` or `~/.zshenv`.
