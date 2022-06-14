@@ -188,9 +188,10 @@ type DockerContainerState struct {
 }
 
 type DockerContainerLauncherResolver struct {
-	docker   *Docker // TODO: have multiple docker hosts and a way to choose
-	stopping bool
-	mutex    *sync.RWMutex
+	docker       *Docker // TODO: have multiple docker hosts and a way to choose
+	stopping     bool
+	mutex        *sync.RWMutex
+	startTimeout float64
 
 	runningContainers map[DockerContainerParams]*DockerContainerState
 }
@@ -199,7 +200,7 @@ func (r *DockerContainerLauncherResolver) Stop() {
 	r.stopping = true
 }
 
-func (r *DockerContainerLauncherResolver) Cleanup(minutes float64) {
+func (r *DockerContainerLauncherResolver) Cleanup(stopTimeout, containerTimeout float64) {
 	now := time.Now()
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
@@ -207,7 +208,7 @@ func (r *DockerContainerLauncherResolver) Cleanup(minutes float64) {
 		last := time.Unix(state.last, 0)
 		minutesElapsed := now.Sub(last).Minutes()
 		fmt.Println(minutesElapsed, params, state)
-		if state.running && minutesElapsed >= minutes /* 1min */ {
+		if state.running && minutesElapsed >= stopTimeout /* 1min */ {
 
 			err := r.stopContainer(state.id)
 			if err != nil {
@@ -216,7 +217,7 @@ func (r *DockerContainerLauncherResolver) Cleanup(minutes float64) {
 
 			state.running = false
 
-		} else if !state.running && minutesElapsed >= 60 {
+		} else if !state.running && minutesElapsed >= containerTimeout {
 
 			err := r.removeContainer(state.id)
 			if err != nil {
@@ -233,17 +234,23 @@ func (r *DockerContainerLauncherResolver) Cleanup(minutes float64) {
 	}
 }
 
-func (r *DockerContainerLauncherResolver) PeriodicCleanup(minutes float64) {
-	if minutes == 0 {
+func (r *DockerContainerLauncherResolver) PeriodicCleanup(stopTimeout, containerTimeout, sleep float64) {
+	if stopTimeout == 0 {
 		// for periodic cleanup time interval must be nonzero
-		minutes = 1 // defaults to 1 min
+		stopTimeout = 1 // defaults to 1 min
+	}
+	if containerTimeout == 0 {
+		containerTimeout = 60 // defaults to 60 min
+	}
+	if sleep == 0 {
+		sleep = 1
 	}
 	for {
-		r.Cleanup(minutes)
+		r.Cleanup(stopTimeout, containerTimeout)
 		if r.stopping {
 			break
 		}
-		time.Sleep(1 * time.Minute) // sleep 1 min
+		time.Sleep(time.Duration(sleep*60) * time.Second) // sleep 1 min
 		if r.stopping {
 			break
 		}
@@ -493,6 +500,10 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 		}
 	}
 
+	if r.startTimeout > 0 {
+		time.Sleep(time.Duration(r.startTimeout) * time.Minute)
+	}
+
 	// parts[1]
 	if len(remoteAddress) == 0 {
 		err = fmt.Errorf("target not found")
@@ -581,6 +592,10 @@ func main() {
 	var keyPath string = "./certs/localhost-key.pem"
 	var certPath string = "./certs/localhost.pem"
 	var dockerHost string = "unix:///var/run/docker.sock"
+	var startTimeout float64 = 5
+	var stopTimeout float64 = 1
+	var containerTimeout float64 = 60
+	var sleepTimeout float64 = 1
 
 	flag.IntVar(&port, "port", port, "port number")
 	flag.IntVar(&port, "p", port, "port number")
@@ -589,6 +604,10 @@ func main() {
 	flag.StringVar(&keyPath, "key", keyPath, "private key path")
 	flag.StringVar(&certPath, "cert", certPath, "certificate path")
 	flag.StringVar(&dockerHost, "docker", dockerHost, "set path to docker engine, e.g., unix:///var/run/docker.sock, ssh://user@remote-host or http://remote-host")
+	flag.Float64Var(&startTimeout, "start", startTimeout, "start delay")
+	flag.Float64Var(&stopTimeout, "stop", stopTimeout, "container stop timeout")
+	flag.Float64Var(&containerTimeout, "remove", containerTimeout, "container remove timeout")
+	flag.Float64Var(&sleepTimeout, "sleep", sleepTimeout, "sleep timeout")
 
 	flag.Parse()
 
@@ -601,8 +620,8 @@ func main() {
 		log.Fatalf("docker error: %v", err)
 		return
 	}
-	resolver := DockerContainerLauncherResolver{docker: docker, mutex: &sync.RWMutex{}}
-	go resolver.PeriodicCleanup(0)
+	resolver := DockerContainerLauncherResolver{docker: docker, mutex: &sync.RWMutex{}, startTimeout: startTimeout}
+	go resolver.PeriodicCleanup(stopTimeout, containerTimeout, sleepTimeout)
 
 	remoteHosts, err = load("proxy.yaml")
 	log.Println("got remote hosts", remoteHosts, err)
