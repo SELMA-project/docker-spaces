@@ -16,7 +16,8 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 # ToDo
 
 - Delay connecting TCP session to the container untill it has started
-- Compatibility mode for legacy applications (built-in URLs)
+- Compatibility mode for legacy applications with built-in URLs: selmaproject--tts--777--5002--2022spaces.pinitree.com:7788
 - Adjusting the content length parameter in the HTTP header
 - 1min stop and 1 hour delete timer set AFTER servicing the TCP connection
 - Scaling on single and multiple hosts, queuing incomming connections when no resources
+- SQLite DB for accounts (2022spaces) and state
