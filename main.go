@@ -434,9 +434,55 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 		return
 	}
 
+	// search for end of headers position
+	endOfHeaders := bytes.Index(buff, []byte("\r\n\r\n"))
+	if endOfHeaders == -1 {
+		return
+	}
+
+	// read all headers and parse cookies
+	headerLines := strings.Split(string(buff), "\r\n")
+	headerLines = headerLines[1:] // exclude request line
+
+	headers := http.Header{}
+
+	// parse headers
+	for _, line := range headerLines {
+		if len(line) == 0 {
+			continue
+		}
+		kv := strings.SplitN(line, ":", 2)
+		key := strings.TrimSpace(kv[0])
+		value := strings.TrimSpace(kv[1])
+
+		fmt.Println(key, ":", value)
+
+		if key == "Cookie" {
+			// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/cookie
+			// https://stackoverflow.com/questions/4843556/in-http-specification-what-is-the-string-that-separates-cookies
+			// https://stackoverflow.com/questions/1969232/what-are-allowed-characters-in-cookies
+			cookiedefs := strings.Split(value, "; ")
+			for _, cookiedef := range cookiedefs {
+				nv := strings.SplitN(cookiedef, "=", 2)
+				var name string
+				var value string
+				if len(nv) == 1 {
+					// cookie with empty name, e.g.
+					value = nv[0]
+				} else {
+					name = nv[0]
+					value = nv[1]
+				}
+				headers.Add(name, value)
+			}
+			// break
+		}
+	}
+
 	log.Println("Got HTTP method:", parts[0])
 	log.Println("Got HTTP path:", parts[1])
 	log.Println("Got HTTP version:", parts[2])
+	log.Println("Headers", headers)
 
 	// TODO: choose target here
 
@@ -445,6 +491,12 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 	requestPath := parts[1]
 
 	var activityNotifier func()
+
+	session := headers.Get("X-Reverse-Proxy-Session")
+
+	var setCookie string
+
+	// TODO: what if site tries to access it's internal url with same path as reverse proxy entrypoint url, e.g., /tts/
 
 	// http://194.8.1.235:8888/x-selmaproject-tts-777-5002/
 	// selmaproject/tts:777 with external port 8765
@@ -480,6 +532,13 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 
 		fmt.Println("remote address:", remoteAddress)
 
+		l := ""
+		if len(label) > 0 {
+			l = ":" + label
+		}
+
+		setCookie = fmt.Sprintf("X-Reverse-Proxy-Session=x:%s:%d%s", strings.Replace(image, "/", ":", 1), port, l)
+
 		// reverseReplacer = createReplacer("/api/tts~/" + pathParts[1] + "/api/tts")
 		// reverseReplacer = createReplacer("/api/tts~/tts/api/tts")
 
@@ -490,6 +549,7 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 		for _, remoteHost := range remoteHosts {
 			if strings.HasPrefix(parts[1], remoteHost.Endpoint) {
 				parts[1] = strings.Replace(parts[1], remoteHost.Endpoint, "", 1) // replace URL
+				setCookie = fmt.Sprintf("X-Reverse-Proxy-Session=s:%s", strings.ReplaceAll(parts[1], "/", ":"))
 				remoteAddress = remoteHost.Remote
 				log.Println("found remote host configuration", remoteHost)
 				if len(remoteHost.Replacer) > 0 {
@@ -501,7 +561,65 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 	}
 
 	if r.startTimeout > 0 {
+		log.Printf("waiting %f minutes for container to start", r.startTimeout)
 		time.Sleep(time.Duration(r.startTimeout) * time.Minute)
+		log.Printf("waiting done, container should be ready by now")
+	}
+
+	if len(remoteAddress) == 0 && len(session) > 0 {
+
+		log.Println("remote address missing, loading session cookie")
+
+		ps := strings.Split(session, ":")
+
+		t := ps[0] // type
+		if t == "x" {
+			// dynamic
+
+			if len(ps) < 5 {
+				err = fmt.Errorf("invalid dynamic image request")
+				return
+			}
+
+			label := ""
+			image := fmt.Sprintf("%s/%s:%s", ps[1], ps[2], ps[3])
+			var port int
+			port, err = strconv.Atoi(ps[4])
+			if err != nil {
+				err = fmt.Errorf("invalid internal port: %v", err)
+				return
+			}
+
+			if len(ps) > 5 {
+				label = ps[5]
+			}
+
+			remoteAddress, activityNotifier, err = r.dockerRun(image, port, label)
+			if err != nil {
+				log.Printf("docker run error: %v", err)
+				return
+			}
+
+			fmt.Println("remote address:", remoteAddress)
+
+			// reverseReplacer = createReplacer("/api/tts~/" + pathParts[1] + "/api/tts")
+			// reverseReplacer = createReplacer("/api/tts~/tts/api/tts")
+
+		} else if t == "s" {
+			// static
+			pp := strings.Join(ps[1:], "/")
+			for _, remoteHost := range remoteHosts {
+				if strings.HasPrefix(pp, remoteHost.Endpoint) {
+					// parts[1] = strings.Replace(parts[1], remoteHost.Endpoint, "", 1) // replace URL
+					remoteAddress = remoteHost.Remote
+					log.Println("found remote host configuration", remoteHost)
+					if len(remoteHost.Replacer) > 0 {
+						// reverseReplacer = createReplacer(remoteHost.Replacer)
+					}
+					break
+				}
+			}
+		}
 	}
 
 	// parts[1]
@@ -547,12 +665,63 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 	// 	b = p.Replacer(b)
 	// }
 
+	/*
+		if len(setCookie) > 0 {
+
+			log.Println("setting cookie:", setCookie)
+
+			log.Println(">", string(buff[requestLineLength:endOfHeaders]), "<")
+			// write headers
+			_, err = conn.Write(buff[requestLineLength:endOfHeaders])
+			if err != nil {
+				err = fmt.Errorf("write filed: %v", err)
+				// p.err("Write failed '%s'\n", err)
+				return
+			}
+
+			var n int
+
+			log.Println(">", "Set-Cookie: "+setCookie+"\r\n", "<")
+			// write set-cookie header
+			n, err = conn.Write([]byte("Set-Cookie: " + setCookie + "\r\n"))
+			// write rest of the buffer to the target
+			if err != nil {
+				err = fmt.Errorf("write filed: %v", err)
+				// p.err("Write failed '%s'\n", err)
+				return
+			}
+			fmt.Println("!!!!!!!wrote ", n, err)
+
+			log.Println(">", string(buff[endOfHeaders:]), "<")
+			// write rest of the buffer
+			_, err = conn.Write(buff[endOfHeaders:])
+			if err != nil {
+				err = fmt.Errorf("write filed: %v", err)
+				// p.err("Write failed '%s'\n", err)
+				return
+			}
+		} else {
+	*/
 	// write rest of the buffer to the target
 	_, err = conn.Write(buff[requestLineLength:])
 	if err != nil {
 		err = fmt.Errorf("write filed: %v", err)
 		// p.err("Write failed '%s'\n", err)
 		return
+	}
+	// }
+
+	if len(setCookie) > 0 {
+		log.Println("SET COOKIE", setCookie)
+		conn = &HTTPSetCookieReplacer{inner: conn, SetCookie: setCookie}
+		// conn = &HTTPSetCookieReplacer{conn, setCookie, false, nil}
+		// reverseReplacer = func(conn io.ReadWriteCloser) io.ReadWriteCloser {
+		// 	return &HTTPSetCookieReplacer{conn, setCookie, false, nil}
+		// 	// inner         io.ReadWriteCloser
+		// 	// SetCookie     string
+		// 	// headerWritten bool
+		// 	// buff          *bytes.Buffer
+		// }
 	}
 
 	// TODO: wrap conn to notify on read activity
