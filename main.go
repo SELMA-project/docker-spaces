@@ -516,6 +516,40 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 
 		fmt.Println("remote address:", remoteAddress)
 
+		for {
+			time.Sleep(1 * time.Second)
+			fmt.Println("trying")
+			cn, er := net.Dial("tcp", remoteAddress)
+			if er != nil {
+				fmt.Println("!!! remote conn filed", er)
+				break
+				// return
+			}
+
+			// x, er := cn.Write([]byte("HELLO"))
+			// if er != nil {
+			// 	fmt.Println("!!!!! remote conn write filed", er)
+			// 	return
+			// }
+			// fmt.Println("written", x)
+			cn.SetReadDeadline(time.Now().Add(time.Second * 1))
+
+			bf := make([]byte, 1024)
+			x, er := cn.Read(bf)
+			// fmt.Println(er)
+			if er == io.EOF {
+				cn.Close()
+				continue
+			}
+			if er != nil {
+				fmt.Println("remote conn read filed", er)
+				// return
+			}
+			fmt.Println("read", x)
+			cn.Close()
+			break
+		}
+
 		// reverseReplacer = createReplacer("/api/tts~/" + pathParts[1] + "/api/tts")
 		// reverseReplacer = createReplacer("/api/tts~/tts/api/tts")
 
@@ -555,6 +589,40 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 
 		fmt.Println("remote address:", remoteAddress)
 
+		for {
+			time.Sleep(1 * time.Second)
+			fmt.Println("trying")
+			cn, er := net.Dial("tcp", remoteAddress)
+			if er != nil {
+				fmt.Println("!!! remote conn filed", er)
+				break
+				// return
+			}
+
+			// x, er := cn.Write([]byte("HELLO"))
+			// if er != nil {
+			// 	fmt.Println("!!!!! remote conn write filed", er)
+			// 	return
+			// }
+			// fmt.Println("written", x)
+			cn.SetReadDeadline(time.Now().Add(time.Second * 1))
+
+			bf := make([]byte, 1024)
+			x, er := cn.Read(bf)
+			// fmt.Println(er)
+			if er == io.EOF {
+				cn.Close()
+				continue
+			}
+			if er != nil {
+				fmt.Println("remote conn read filed", er)
+				// return
+			}
+			fmt.Println("read", x)
+			cn.Close()
+			break
+		}
+
 		// TODO: update referrer ?
 		// parts[1] = "/" + strings.Join(pathParts[2:], "/")
 
@@ -573,9 +641,10 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 		}
 	}
 
-	if !alreadyRunning && r.startTimeout > 0 {
-		time.Sleep(time.Duration(r.startTimeout) * time.Minute)
-	}
+	fmt.Println(alreadyRunning)
+	// if !alreadyRunning && r.startTimeout > 0 {
+	// 	time.Sleep(time.Duration(r.startTimeout) * time.Minute)
+	// }
 
 	// parts[1]
 	if len(remoteAddress) == 0 {

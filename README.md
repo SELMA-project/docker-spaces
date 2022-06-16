@@ -22,7 +22,7 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 
 ### Features
 
-* [ ] Delay connecting TCP session to the container untill it has started (fixed timeout implemented for now)
+* [x] Delay connecting TCP session to the container untill it has started (fixed timeout implemented for now)
 * [ ] 1min stop and 1 hour delete timer set AFTER servicing the TCP connection (fixed timeout implemented for now)
 * [ ] Scaling on single and multiple hosts, queuing incomming connections when no resources
 * [ ] SQLite DB for accounts (2022spaces), state, config, docker-compose
