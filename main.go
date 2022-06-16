@@ -279,7 +279,7 @@ func (r *DockerContainerLauncherResolver) removeContainer(id string) error {
 	return nil
 }
 
-func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort int, label string) (address string, activityNotifier func(), err error) {
+func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort int, label string) (address string, activityNotifier func(), alreadyRunning bool, err error) {
 
 	if r.runningContainers == nil {
 		r.runningContainers = map[DockerContainerParams]*DockerContainerState{}
@@ -302,6 +302,7 @@ func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort i
 				fmt.Println("got activity 3")
 				state.last = time.Now().Unix()
 			}
+			alreadyRunning = true
 			return
 		} else /* if !state.running */ {
 			id = state.id
@@ -490,6 +491,8 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 
 	requestPath := parts[1]
 
+	alreadyRunning := false
+
 	var activityNotifier func()
 
 	session := headers.Get("X-Reverse-Proxy-Session")
@@ -524,7 +527,7 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 			label = ps[5]
 		}
 
-		remoteAddress, activityNotifier, err = r.dockerRun(image, port, label)
+		remoteAddress, activityNotifier, alreadyRunning, err = r.dockerRun(image, port, label)
 		if err != nil {
 			log.Printf("docker run error: %v", err)
 			return
@@ -560,8 +563,7 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 		}
 	}
 
-	if r.startTimeout > 0 {
-		log.Printf("waiting %f minutes for container to start", r.startTimeout)
+	if !alreadyRunning && r.startTimeout > 0 {
 		time.Sleep(time.Duration(r.startTimeout) * time.Minute)
 		log.Printf("waiting done, container should be ready by now")
 	}
@@ -594,7 +596,7 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 				label = ps[5]
 			}
 
-			remoteAddress, activityNotifier, err = r.dockerRun(image, port, label)
+			remoteAddress, activityNotifier, alreadyRunning, err = r.dockerRun(image, port, label)
 			if err != nil {
 				log.Printf("docker run error: %v", err)
 				return
@@ -604,6 +606,11 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 
 			// reverseReplacer = createReplacer("/api/tts~/" + pathParts[1] + "/api/tts")
 			// reverseReplacer = createReplacer("/api/tts~/tts/api/tts")
+
+			if !alreadyRunning && r.startTimeout > 0 {
+				time.Sleep(time.Duration(r.startTimeout) * time.Minute)
+				log.Printf("waiting done, container should be ready by now")
+			}
 
 		} else if t == "s" {
 			// static
