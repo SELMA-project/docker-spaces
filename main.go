@@ -435,9 +435,35 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 		return
 	}
 
+	// search for end of headers position
+	endOfHeaders := bytes.Index(buff, []byte("\r\n\r\n"))
+	if endOfHeaders == -1 {
+		return
+	}
+
+	// read all headers and parse cookies
+	headerLines := strings.Split(string(buff), "\r\n")
+	headerLines = headerLines[1:] // exclude request line
+
+	headers := http.Header{}
+
+	// parse headers
+	for _, line := range headerLines {
+		if len(line) == 0 {
+			continue
+		}
+		kv := strings.SplitN(line, ":", 2)
+		key := strings.TrimSpace(kv[0])
+		value := strings.TrimSpace(kv[1])
+		headers.Add(key, value)
+
+		// fmt.Println(key, ":", value)
+	}
+
 	log.Println("Got HTTP method:", parts[0])
 	log.Println("Got HTTP path:", parts[1])
 	log.Println("Got HTTP version:", parts[2])
+	log.Println("Headers", headers)
 
 	// TODO: choose target here
 
@@ -446,6 +472,13 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 	requestPath := parts[1]
 
 	alreadyRunning := false
+
+	var ref *url.URL
+
+	referer := headers.Get("Referer")
+	if len(referer) > 0 {
+		ref, _ = url.Parse(referer)
+	}
 
 	var activityNotifier func()
 
@@ -487,6 +520,43 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 		// reverseReplacer = createReplacer("/api/tts~/tts/api/tts")
 
 		parts[1] = "/" + strings.Join(pathParts[2:], "/")
+
+	} else if ref != nil && (len(ref.Host) == 0 || ref.Host == headers.Get("Host")) && strings.HasPrefix(ref.Path, "/x:") {
+
+		fmt.Println("referer mode")
+
+		pathParts := strings.Split(ref.Path, "/")
+		fmt.Println(pathParts)
+		ps := strings.Split(pathParts[1], ":")
+
+		if len(ps) < 5 {
+			err = fmt.Errorf("invalid dynamic image request")
+			return
+		}
+
+		label := ""
+		image := fmt.Sprintf("%s/%s:%s", ps[1], ps[2], ps[3])
+		var port int
+		port, err = strconv.Atoi(ps[4])
+		if err != nil {
+			err = fmt.Errorf("invalid internal port: %v", err)
+			return
+		}
+
+		if len(ps) > 5 {
+			label = ps[5]
+		}
+
+		remoteAddress, activityNotifier, alreadyRunning, err = r.dockerRun(image, port, label)
+		if err != nil {
+			log.Printf("docker run error: %v", err)
+			return
+		}
+
+		fmt.Println("remote address:", remoteAddress)
+
+		// TODO: update referrer ?
+		// parts[1] = "/" + strings.Join(pathParts[2:], "/")
 
 	} else {
 		// *p.remoteHosts
