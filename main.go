@@ -279,7 +279,7 @@ func (r *DockerContainerLauncherResolver) removeContainer(id string) error {
 	return nil
 }
 
-func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort int, label string) (address string, activityNotifier func(), err error) {
+func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort int, label string) (address string, activityNotifier func(), alreadyRunning bool, err error) {
 
 	if r.runningContainers == nil {
 		r.runningContainers = map[DockerContainerParams]*DockerContainerState{}
@@ -302,6 +302,7 @@ func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort i
 				fmt.Println("got activity 3")
 				state.last = time.Now().Unix()
 			}
+			alreadyRunning = true
 			return
 		} else /* if !state.running */ {
 			id = state.id
@@ -444,6 +445,8 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 
 	requestPath := parts[1]
 
+	alreadyRunning := false
+
 	var activityNotifier func()
 
 	// http://194.8.1.235:8888/x-selmaproject-tts-777-5002/
@@ -472,7 +475,7 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 			label = ps[5]
 		}
 
-		remoteAddress, activityNotifier, err = r.dockerRun(image, port, label)
+		remoteAddress, activityNotifier, alreadyRunning, err = r.dockerRun(image, port, label)
 		if err != nil {
 			log.Printf("docker run error: %v", err)
 			return
@@ -500,7 +503,7 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 		}
 	}
 
-	if r.startTimeout > 0 {
+	if !alreadyRunning && r.startTimeout > 0 {
 		time.Sleep(time.Duration(r.startTimeout) * time.Minute)
 	}
 
