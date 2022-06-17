@@ -181,11 +181,12 @@ type DockerContainerParams struct {
 }
 
 type DockerContainerState struct {
-	id      string
-	last    int64
-	port    int
-	running bool
-	busy    bool
+	id       string
+	last     int64
+	port     int
+	running  bool
+	busy     bool
+	starting bool
 }
 
 type DockerContainerLauncherResolver struct {
@@ -206,6 +207,9 @@ func (r *DockerContainerLauncherResolver) Cleanup(jobTimeout, stopTimeout, conta
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	for params, state := range r.runningContainers {
+		if state.starting {
+			continue // do not touch containers in starting phase
+		}
 		last := time.Unix(state.last, 0)
 		minutesElapsed := now.Sub(last).Minutes()
 		// fmt.Println(minutesElapsed, params, state)
@@ -242,6 +246,8 @@ func (r *DockerContainerLauncherResolver) Cleanup(jobTimeout, stopTimeout, conta
 			state.busy = false
 		}
 	}
+
+	return
 }
 
 func (r *DockerContainerLauncherResolver) PeriodicCleanup(jobTimeout, stopTimeout, containerTimeout, sleep float64) {
@@ -300,7 +306,7 @@ func (r *DockerContainerLauncherResolver) removeContainer(id string) error {
 	return nil
 }
 
-func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort int, label string) (address string, activityNotifier func(), alreadyRunning bool, err error) {
+func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort int, label string) (address string, activityNotifier func(), state *DockerContainerState, err error) {
 
 	if r.runningContainers == nil {
 		r.runningContainers = map[DockerContainerParams]*DockerContainerState{}
@@ -311,28 +317,46 @@ func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort i
 	var id string
 	var externalPort int
 
+	// var state *DockerContainerState
+
 	r.mutex.RLock()
-	// TODO: how to prevent cleanup during this? expand mutex?
-	if state, ok := r.runningContainers[params]; ok {
-		if state.running /* && state.last > 0 */ {
+	state, present := r.runningContainers[params]
+	if present {
+		if state.running || state.starting /* && state.last > 0 */ {
 			r.mutex.RUnlock()
 			// refresh last run time
 			state.last = time.Now().Unix()
 			state.busy = true
-			address = fmt.Sprintf("%s:%d", r.docker.host, state.port)
+			if state.running {
+				address = fmt.Sprintf("%s:%d", r.docker.host, state.port)
+			}
 			activityNotifier = func() {
 				fmt.Println("got activity 3")
 				state.last = time.Now().Unix()
 				state.busy = false // TODO: only when EOF or Close()
 			}
-			alreadyRunning = true
 			return
 		} else /* if !state.running */ {
 			id = state.id
 			externalPort = state.port
 		}
+		state.starting = true
+	} else {
+		// state for this container configuration does not exist yet, add it now so that concurrent run calls for this configuration wait for this run to complete
+		r.mutex.RUnlock()
+		r.mutex.Lock()
+		state = &DockerContainerState{id: id, last: time.Now().Unix(), port: externalPort, running: false, starting: true, busy: false}
+		r.runningContainers[params] = state
+		r.mutex.Unlock()
+		r.mutex.RLock()
 	}
 	r.mutex.RUnlock()
+
+	activityNotifier = func() {
+		fmt.Println("got activity")
+		state.last = time.Now().Unix()
+		state.busy = false // TODO: only when EOF or Close()
+	}
 
 	response, err := r.docker.Post("/images/create", &url.Values{"fromImage": []string{image}}, nil)
 	if err != nil {
@@ -403,31 +427,14 @@ func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort i
 		return
 	}
 
-	r.mutex.RLock()
-	if state, ok := r.runningContainers[params]; ok {
-		r.mutex.RUnlock()
-		// refresh last run time
-		state.last = time.Now().Unix()
-		state.port = externalPort
-		state.running = true
-		state.busy = true
-		activityNotifier = func() {
-			fmt.Println("got activity 1")
-			state.last = time.Now().Unix()
-			state.busy = false // TODO: only when EOF or Close()
-		}
-	} else {
-		r.mutex.RUnlock()
-		r.mutex.Lock()
-		state := &DockerContainerState{id: id, last: time.Now().Unix(), port: externalPort, running: true, busy: true}
-		activityNotifier = func() {
-			fmt.Println("got activity 2")
-			state.last = time.Now().Unix()
-			state.busy = false // TODO: only when EOF or Close()
-		}
-		r.runningContainers[params] = state
-		r.mutex.Unlock()
-	}
+	// update state
+	// TODO: lock mutex properly
+	state.id = id
+	state.last = time.Now().Unix()
+	state.port = externalPort
+	state.starting = false
+	state.running = true
+	state.busy = true
 
 	address = fmt.Sprintf("%s:%d", r.docker.host, externalPort)
 
@@ -496,8 +503,6 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 
 	requestPath := parts[1]
 
-	alreadyRunning := false
-
 	var ref *url.URL
 
 	referer := headers.Get("Referer")
@@ -506,6 +511,7 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 	}
 
 	var activityNotifier func()
+	var state *DockerContainerState
 
 	// http://194.8.1.235:8888/x-selmaproject-tts-777-5002/
 	// selmaproject/tts:777 with external port 8765
@@ -533,7 +539,7 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 			label = ps[5]
 		}
 
-		remoteAddress, activityNotifier, alreadyRunning, err = r.dockerRun(image, port, label)
+		remoteAddress, activityNotifier, state, err = r.dockerRun(image, port, label)
 		if err != nil {
 			log.Printf("docker run error: %v", err)
 			return
@@ -543,6 +549,13 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 
 		for {
 			time.Sleep(1 * time.Second)
+			if state.starting {
+				fmt.Println("waiting for container to start")
+				continue
+			}
+			if len(remoteAddress) == 0 {
+				remoteAddress = fmt.Sprintf("%s:%d", r.docker.host, state.port) // dirty hack
+			}
 			fmt.Println("trying")
 			cn, er := net.Dial("tcp", remoteAddress)
 			if er != nil {
@@ -606,7 +619,7 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 			label = ps[5]
 		}
 
-		remoteAddress, activityNotifier, alreadyRunning, err = r.dockerRun(image, port, label)
+		remoteAddress, activityNotifier, state, err = r.dockerRun(image, port, label)
 		if err != nil {
 			log.Printf("docker run error: %v", err)
 			return
@@ -616,6 +629,13 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 
 		for {
 			time.Sleep(1 * time.Second)
+			if state.starting {
+				fmt.Println("waiting for container to start")
+				continue
+			}
+			if len(remoteAddress) == 0 {
+				remoteAddress = fmt.Sprintf("%s:%d", r.docker.host, state.port) // dirty hack
+			}
 			fmt.Println("trying")
 			cn, er := net.Dial("tcp", remoteAddress)
 			if er != nil {
@@ -665,11 +685,6 @@ func (r *DockerContainerLauncherResolver) resolver(buff []byte) (conn io.ReadWri
 			}
 		}
 	}
-
-	fmt.Println(alreadyRunning)
-	// if !alreadyRunning && r.startTimeout > 0 {
-	// 	time.Sleep(time.Duration(r.startTimeout) * time.Minute)
-	// }
 
 	// parts[1]
 	if len(remoteAddress) == 0 {

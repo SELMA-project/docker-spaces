@@ -17,7 +17,7 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 
 ### Debugging
 
-* [ ] Cannot connect to the running container immediately (starts a new container each time; after RemoveTimeout deletes only the latest container)
+* [x] Cannot connect to the running container immediately (starts a new container each time; after RemoveTimeout deletes only the latest container)
 * [ ] ~~startTimeout starts before the container is created (takes 12-20sec)~~
 
 ### Features
