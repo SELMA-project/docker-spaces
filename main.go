@@ -185,6 +185,7 @@ type DockerContainerState struct {
 	last    int64
 	port    int
 	running bool
+	busy    bool
 }
 
 type DockerContainerLauncherResolver struct {
@@ -200,15 +201,15 @@ func (r *DockerContainerLauncherResolver) Stop() {
 	r.stopping = true
 }
 
-func (r *DockerContainerLauncherResolver) Cleanup(stopTimeout, containerTimeout float64) {
+func (r *DockerContainerLauncherResolver) Cleanup(jobTimeout, stopTimeout, containerTimeout float64) {
 	now := time.Now()
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	for params, state := range r.runningContainers {
 		last := time.Unix(state.last, 0)
 		minutesElapsed := now.Sub(last).Minutes()
-		fmt.Println(minutesElapsed, params, state)
-		if state.running && minutesElapsed >= stopTimeout /* 1min */ {
+		// fmt.Println(minutesElapsed, params, state)
+		if state.running && !state.busy && minutesElapsed >= stopTimeout /* 1min */ {
 
 			err := r.stopContainer(state.id)
 			if err != nil {
@@ -217,7 +218,7 @@ func (r *DockerContainerLauncherResolver) Cleanup(stopTimeout, containerTimeout 
 
 			state.running = false
 
-		} else if !state.running && minutesElapsed >= containerTimeout {
+		} else if !state.running && !state.busy && minutesElapsed >= containerTimeout {
 
 			err := r.removeContainer(state.id)
 			if err != nil {
@@ -230,11 +231,20 @@ func (r *DockerContainerLauncherResolver) Cleanup(stopTimeout, containerTimeout 
 			delete(r.runningContainers, params)
 			r.mutex.Unlock()
 			r.mutex.RLock()
+		} else if state.running && state.busy && minutesElapsed >= jobTimeout {
+			log.Println("killing container")
+			err := r.killContainer(state.id)
+			if err != nil {
+				log.Printf("error killing container: %v", err)
+			}
+
+			state.running = false
+			state.busy = false
 		}
 	}
 }
 
-func (r *DockerContainerLauncherResolver) PeriodicCleanup(stopTimeout, containerTimeout, sleep float64) {
+func (r *DockerContainerLauncherResolver) PeriodicCleanup(jobTimeout, stopTimeout, containerTimeout, sleep float64) {
 	if stopTimeout == 0 {
 		// for periodic cleanup time interval must be nonzero
 		stopTimeout = 1 // defaults to 1 min
@@ -246,7 +256,7 @@ func (r *DockerContainerLauncherResolver) PeriodicCleanup(stopTimeout, container
 		sleep = 1
 	}
 	for {
-		r.Cleanup(stopTimeout, containerTimeout)
+		r.Cleanup(jobTimeout, stopTimeout, containerTimeout)
 		if r.stopping {
 			break
 		}
@@ -255,6 +265,17 @@ func (r *DockerContainerLauncherResolver) PeriodicCleanup(stopTimeout, container
 			break
 		}
 	}
+}
+
+func (r *DockerContainerLauncherResolver) killContainer(id string) error {
+	fmt.Println("killing container", id)
+	response, err := r.docker.Post("/containers/"+id+"/kill", nil, nil)
+	if err != nil {
+		return err
+		// log.Fatal("got err", err)
+	}
+	fmt.Println("KILL CONTAINER RESPONSE:", response)
+	return nil
 }
 
 func (r *DockerContainerLauncherResolver) stopContainer(id string) error {
@@ -297,10 +318,12 @@ func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort i
 			r.mutex.RUnlock()
 			// refresh last run time
 			state.last = time.Now().Unix()
+			state.busy = true
 			address = fmt.Sprintf("%s:%d", r.docker.host, state.port)
 			activityNotifier = func() {
 				fmt.Println("got activity 3")
 				state.last = time.Now().Unix()
+				state.busy = false // TODO: only when EOF or Close()
 			}
 			alreadyRunning = true
 			return
@@ -387,18 +410,20 @@ func (r *DockerContainerLauncherResolver) dockerRun(image string, internalPort i
 		state.last = time.Now().Unix()
 		state.port = externalPort
 		state.running = true
+		state.busy = true
 		activityNotifier = func() {
 			fmt.Println("got activity 1")
 			state.last = time.Now().Unix()
+			state.busy = false // TODO: only when EOF or Close()
 		}
-		return
 	} else {
 		r.mutex.RUnlock()
 		r.mutex.Lock()
-		state := &DockerContainerState{id: id, last: time.Now().Unix(), port: externalPort, running: true}
+		state := &DockerContainerState{id: id, last: time.Now().Unix(), port: externalPort, running: true, busy: true}
 		activityNotifier = func() {
 			fmt.Println("got activity 2")
 			state.last = time.Now().Unix()
+			state.busy = false // TODO: only when EOF or Close()
 		}
 		r.runningContainers[params] = state
 		r.mutex.Unlock()
@@ -739,6 +764,7 @@ func main() {
 	var stopTimeout float64 = 1
 	var containerTimeout float64 = 60
 	var sleepTimeout float64 = 1
+	var jobTimeout float64 = 2
 
 	flag.IntVar(&port, "port", port, "port number")
 	flag.IntVar(&port, "p", port, "port number")
@@ -747,7 +773,8 @@ func main() {
 	flag.StringVar(&keyPath, "key", keyPath, "private key path")
 	flag.StringVar(&certPath, "cert", certPath, "certificate path")
 	flag.StringVar(&dockerHost, "docker", dockerHost, "set path to docker engine, e.g., unix:///var/run/docker.sock, ssh://user@remote-host or http://remote-host")
-	flag.Float64Var(&startTimeout, "start", startTimeout, "start delay")
+	// flag.Float64Var(&startTimeout, "start", startTimeout, "start delay")
+	flag.Float64Var(&jobTimeout, "timeout", jobTimeout, "job timeout")
 	flag.Float64Var(&stopTimeout, "stop", stopTimeout, "container stop timeout")
 	flag.Float64Var(&containerTimeout, "remove", containerTimeout, "container remove timeout")
 	flag.Float64Var(&sleepTimeout, "sleep", sleepTimeout, "sleep timeout")
@@ -764,7 +791,7 @@ func main() {
 		return
 	}
 	resolver := DockerContainerLauncherResolver{docker: docker, mutex: &sync.RWMutex{}, startTimeout: startTimeout}
-	go resolver.PeriodicCleanup(stopTimeout, containerTimeout, sleepTimeout)
+	go resolver.PeriodicCleanup(jobTimeout, stopTimeout, containerTimeout, sleepTimeout)
 
 	remoteHosts, err = load("proxy.yaml")
 	log.Println("got remote hosts", remoteHosts, err)
