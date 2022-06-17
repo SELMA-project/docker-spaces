@@ -711,10 +711,11 @@ type ReadNotifier struct {
 }
 
 func (r *ReadNotifier) Read(buff []byte) (n int, err error) {
-	if r.notifier != nil {
+	n, err = r.inner.Read(buff)
+	if r.notifier != nil && n > 0 && err == nil {
 		r.notifier()
 	}
-	return r.inner.Read(buff)
+	return
 }
 
 func (r *ReadNotifier) Write(buff []byte) (n int, err error) {
