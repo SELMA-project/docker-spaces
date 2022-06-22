@@ -48,3 +48,7 @@ To enable docker engine connection via SSH to macOS docker host, add the followi
 ```export PATH=$PATH:/usr/local/bin```
 
 to `~/.bashrc` or `~/.zshenv`.
+
+# Queueing logic for x-type jobs
+
+![diagram](x-queue.png)
