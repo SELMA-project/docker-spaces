@@ -25,7 +25,6 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 
 ### Optional (alternatively, can be implemented via NGINX)
 
-* [ ] Compatibility mode for legacy applications with built-in URLs: selmaproject--tts--777--5002--2022spaces.pinitree.com:7788
 * [ ] HTTPS CORS for serverless NLP pipeline calls directly from the Web frontend JavaScript, WASM (e.g. JupyterLight)
 
 ### Considerations
