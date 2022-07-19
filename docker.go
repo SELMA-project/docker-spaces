@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
+
+	// "log"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,6 +17,26 @@ import (
 	"strings"
 	"time"
 )
+
+type DockerAuth struct {
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	Email         string `json:"email"`
+	ServerAddress string `json:"serveraddress"` // defaults (by remote engine) to https://registry-1.docker.io/v2/
+}
+
+func (a *DockerAuth) Encode() string {
+
+	authJSON, err := json.Marshal(a)
+	if err != nil {
+		return ""
+	}
+
+	authData := make([]byte, base64.StdEncoding.EncodedLen(len(authJSON)))
+	base64.StdEncoding.Encode(authData, authJSON)
+
+	return string(authData)
+}
 
 type JSONDecoderStream struct {
 	decoder *json.Decoder
@@ -117,12 +139,29 @@ func NewDockerResponse(r *http.Response) (response *DockerResponse, err error) {
 	response.ContentType = r.Header.Get("Content-Type")
 	response.IsJSON = response.ContentType == "application/json"
 
+	// NOTE: response (body) must be read till end in case of using HTTP streaming over socket or SSH
+
+	// fmt.Println("RESPONSE CONTENT LENGTH", r.ContentLength, "ENCODING", r.TransferEncoding)
+	// in case of stream: r.ContentLength == -1 and r.TransferEncoding == ["chunked"]
+
 	if response.IsJSON {
 		response.decoder = NewJSONDecoderStream(r.Body)
 		_, err = response.NextJSON()
 	}
 
 	return response, err
+}
+
+func (r *DockerResponse) Close() {
+	// NOTE: because for serial connections (unix sockets, over ssh) all response (body) data must be read before next request,
+	// it is not safe to use one docker serial connection from multiple goroutines without any synchronization
+
+	// ensure the body is read entirely
+	// fmt.Println("reading all body")
+	io.ReadAll(r.BodyReader) // read till end of body
+	// fmt.Println("closing body reader")
+	r.BodyReader.Close()
+	// fmt.Println("body reader done")
 }
 
 // typical docker response headers example
@@ -263,11 +302,11 @@ func (c *dockerReconnectingPipeConn) connect() (err error) {
 		// log.Printf("SSH DOCKER HOST")
 		err := c.cmd.Process.Kill()
 		if err != nil {
-			log.Printf("SSH DOCKER HOST PROCESS KILL ERR: %v", err)
+			log.Printf("docker: connect: SSH remote docker host process kill error: %v", err)
 		}
 		err = c.cmd.Process.Release()
 		if err != nil {
-			log.Printf("SSH DOCKER HOST PROCESS RELEASE ERR: %v", err)
+			log.Printf("docker: connect: SSH remote docker host process release error: %v", err)
 		}
 	}
 	c.dockerPipeConn.stdinPipe, c.dockerPipeConn.stdoutPipe, c.cmd, err = connectSSHpipe(c.host, c.port)
@@ -352,9 +391,10 @@ func connectSSHpipe(host string, port string) (stdin io.WriteCloser, stdout io.R
 }
 
 type Docker struct {
-	endpoint string
-	client   *http.Client
-	host     string
+	endpoint   string
+	client     *http.Client
+	host       string
+	authHeader string
 }
 
 func NewDocker(endpoint string) (docker *Docker, err error) {
@@ -386,7 +426,7 @@ func NewDocker(endpoint string) (docker *Docker, err error) {
 		transport = &http.Transport{
 			MaxConnsPerHost: 1, // this is critical
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				fmt.Println("DOCKER SSH DIAL", network, addr)
+				log.Println("docker SSH dial", network, addr)
 				conn.connect() // connect/reconnect if connection is lost
 				return conn, nil
 			},
@@ -419,7 +459,16 @@ func NewDocker(endpoint string) (docker *Docker, err error) {
 	return
 }
 
-func (d *Docker) callRaw(method string, api string, contentType string, body io.Reader) (response *http.Response /* , data io.ReadCloser */, err error) {
+func (d *Docker) SetAuth(auth *DockerAuth) {
+	if auth == nil {
+		d.authHeader = ""
+	} else {
+		d.authHeader = auth.Encode()
+	}
+	return
+}
+
+func (d *Docker) callRaw(method string, api string, headers http.Header, contentType string, body io.Reader) (response *http.Response /* , data io.ReadCloser */, err error) {
 	url := api
 	if len(d.endpoint) > 0 {
 		url = d.endpoint + api
@@ -427,6 +476,16 @@ func (d *Docker) callRaw(method string, api string, contentType string, body io.
 	request, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return
+	}
+	if headers != nil {
+		for key, values := range headers {
+			for _, value := range values {
+				request.Header.Add(key, value)
+			}
+		}
+	}
+	if len(d.authHeader) > 0 {
+		request.Header.Add("X-Registry-Auth", d.authHeader)
 	}
 	if len(contentType) > 0 {
 		request.Header.Add("Content-Type", contentType)
@@ -443,7 +502,7 @@ func (d *Docker) callRaw(method string, api string, contentType string, body io.
 	return
 }
 
-func (d *Docker) Call(method string, api string, body interface{}) (response *DockerResponse, err error) {
+func (d *Docker) Call(method string, api string, headers http.Header, body interface{}) (response *DockerResponse, err error) {
 	var sendBody io.Reader
 	var contentType string
 	if body != nil {
@@ -456,7 +515,7 @@ func (d *Docker) Call(method string, api string, body interface{}) (response *Do
 	} else {
 		sendBody = http.NoBody
 	}
-	r, err := d.callRaw(method, api, contentType, sendBody)
+	r, err := d.callRaw(method, api, headers, contentType, sendBody)
 	if err != nil {
 		return nil, err
 	}
@@ -503,7 +562,7 @@ func (d *Docker) Call2(method string, api string, body interface{}) (result inte
 	} else {
 		sendBody = http.NoBody
 	}
-	r, err := d.callRaw(method, api, contentType, sendBody)
+	r, err := d.callRaw(method, api, nil, contentType, sendBody)
 	if err != nil {
 		return nil, err
 	}
@@ -536,7 +595,7 @@ func (d *Docker) Call2(method string, api string, body interface{}) (result inte
 	return
 }
 
-func (d *Docker) Get(api string, query *url.Values) (result *DockerResponse, err error) {
+func (d *Docker) Get(api string, query *url.Values, headers http.Header) (result *DockerResponse, err error) {
 	qs := ""
 	if query != nil {
 		qs = query.Encode()
@@ -544,10 +603,10 @@ func (d *Docker) Get(api string, query *url.Values) (result *DockerResponse, err
 			qs = "?" + qs
 		}
 	}
-	return d.Call("GET", api+qs, nil)
+	return d.Call("GET", api+qs, headers, nil)
 }
 
-func (d *Docker) Head(api string, query *url.Values) (result *DockerResponse, err error) {
+func (d *Docker) Head(api string, query *url.Values, headers http.Header) (result *DockerResponse, err error) {
 	qs := ""
 	if query != nil {
 		qs = query.Encode()
@@ -555,11 +614,11 @@ func (d *Docker) Head(api string, query *url.Values) (result *DockerResponse, er
 			qs = "?" + qs
 		}
 	}
-	return d.Call("HEAD", api+qs, nil)
+	return d.Call("HEAD", api+qs, headers, nil)
 	// A response header X-Docker-Container-Path-Stat is returned, containing a base64 - encoded JSON object with some filesystem header information about the path.
 }
 
-func (d *Docker) Post(api string, query *url.Values, body interface{}) (result *DockerResponse, err error) {
+func (d *Docker) Post(api string, query *url.Values, headers http.Header, body interface{}) (result *DockerResponse, err error) {
 	qs := ""
 	if query != nil {
 		qs = query.Encode()
@@ -567,11 +626,10 @@ func (d *Docker) Post(api string, query *url.Values, body interface{}) (result *
 			qs = "?" + qs
 		}
 	}
-	fmt.Println(body)
-	return d.Call("POST", api+qs, body)
+	return d.Call("POST", api+qs, headers, body)
 }
 
-func (d *Docker) Put(api string, query *url.Values, body interface{}) (result *DockerResponse, err error) {
+func (d *Docker) Put(api string, query *url.Values, headers http.Header, body interface{}) (result *DockerResponse, err error) {
 	qs := ""
 	if query != nil {
 		qs = query.Encode()
@@ -579,10 +637,10 @@ func (d *Docker) Put(api string, query *url.Values, body interface{}) (result *D
 			qs = "?" + qs
 		}
 	}
-	return d.Call("PUT", api+qs, body)
+	return d.Call("PUT", api+qs, headers, body)
 }
 
-func (d *Docker) Delete(api string, query *url.Values) (result *DockerResponse, err error) {
+func (d *Docker) Delete(api string, query *url.Values, headers http.Header) (result *DockerResponse, err error) {
 	qs := ""
 	if query != nil {
 		qs = query.Encode()
@@ -590,5 +648,5 @@ func (d *Docker) Delete(api string, query *url.Values) (result *DockerResponse, 
 			qs = "?" + qs
 		}
 	}
-	return d.Call("DELETE", api+qs, nil)
+	return d.Call("DELETE", api+qs, headers, nil)
 }

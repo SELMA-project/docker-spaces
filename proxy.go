@@ -4,12 +4,26 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
+
+	// "log"
 	"net"
-	"net/http"
-	"strings"
 	"time"
 )
+
+type ResolvedTarget interface {
+	RemoteAddress() string
+	HeadData() []byte
+	Activity()
+	Closed()
+}
+
+type ResolvedTargetConnection interface {
+	Connect() (io.ReadWriteCloser, error)
+}
+
+type TargetResolver interface {
+	Resolve([]byte) (ResolvedTarget, error)
+}
 
 // type ReplacerFunc func([]byte) []byte
 type ReplacerFunc func(io.ReadWriteCloser) io.ReadWriteCloser
@@ -40,14 +54,19 @@ type DynamicReverseProxy struct {
 	// Log       Logger
 	// OutputHex bool
 
+	CORS bool
+
 	// remoteHosts *[]RemoteHost
 
-	targetResolver TargetResolverFunc
+	// targetResolver TargetResolverFunc
+	targetResolver TargetResolver
+	resolvedTarget ResolvedTarget
 }
 
 // TODO: target address chooser ?
 
-func NewDynamicReverseProxy(proxyConn net.Conn /* proxyAddress string, */, targetResolver TargetResolverFunc) *DynamicReverseProxy {
+// func NewDynamicReverseProxy(proxyConn net.Conn /* proxyAddress string, */, targetResolver TargetResolverFunc) *DynamicReverseProxy {
+func NewDynamicReverseProxy(proxyConn net.Conn /* proxyAddress string, */, targetResolver TargetResolver) *DynamicReverseProxy {
 	return &DynamicReverseProxy{
 		proxyConn: proxyConn,
 		// proxyAddress: proxyAddress,
@@ -62,7 +81,7 @@ func NewDynamicReverseProxy(proxyConn net.Conn /* proxyAddress string, */, targe
 	}
 }
 
-func (p *DynamicReverseProxy) Start() {
+func (p *DynamicReverseProxy) Start(broker *Broker) {
 	defer p.proxyConn.Close()
 
 	//display both ends
@@ -73,6 +92,10 @@ func (p *DynamicReverseProxy) Start() {
 	//wait for close...
 	<-p.errsig
 	// p.Log.Info("Closed (%d bytes sent, %d bytes recieved)", p.sentBytes, p.receivedBytes)
+
+	if p.resolvedTarget != nil {
+		p.resolvedTarget.Closed()
+	}
 }
 
 func (p *DynamicReverseProxy) err(s string, err error) {
@@ -81,13 +104,13 @@ func (p *DynamicReverseProxy) err(s string, err error) {
 	}
 	if err != io.EOF {
 		// p.Log.Warn(s, err)
-		log.Printf("%s: %v", s, err)
+		log.Error("proxy: %s: %v", s, err)
 	}
 	p.errsig <- true
 	p.erred = true
 }
 
-func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]byte) []byte */) {
+func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]byte) []byte */, notify bool) {
 	// islocal := src == p.lconn
 	//
 	// var dataDirection string
@@ -109,10 +132,14 @@ func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]b
 	for {
 		n, err := src.Read(buff)
 		if err != nil {
-			p.err("Read failed '%s'\n", err)
+			p.err("pipe: read failed", err)
 			return
 		}
 		b := buff[:n]
+
+		if notify && p.resolvedTarget != nil {
+			p.resolvedTarget.Activity()
+		}
 
 		//execute match
 		// if p.Matcher != nil {
@@ -135,7 +162,7 @@ func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]b
 		//write out result
 		n, err = dst.Write(b)
 		if err != nil {
-			p.err("Write failed '%s'\n", err)
+			p.err("pipe: write failed", err)
 			return
 		}
 		// if islocal {
@@ -146,6 +173,7 @@ func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]b
 	}
 }
 
+/*
 // func parseProtocolAndWriteToTargetConn(buff []byte) (conn io.ReadWriteCloser, reverseReplacer func([]byte) []byte, err error) {
 func parseProtocolAndWriteToTargetConn(buff []byte) (conn io.ReadWriteCloser, reverseReplacer ReplacerFunc, err error) {
 
@@ -217,7 +245,7 @@ func parseProtocolAndWriteToTargetConn(buff []byte) (conn io.ReadWriteCloser, re
 	if err != nil {
 		// p.Log.Warn("Remote connection failed: %s", err)
 		// log.Printf("Remote connection failed: %s", err)
-		err = fmt.Errorf("remote connection filed: %v", err)
+		err = fmt.Errorf("remote connection failed: %v", err)
 		return
 	}
 
@@ -225,7 +253,7 @@ func parseProtocolAndWriteToTargetConn(buff []byte) (conn io.ReadWriteCloser, re
 	log.Println("sending:", strings.Join(parts, " "))
 	_, err = conn.Write([]byte(strings.Join(parts, " ")))
 	if err != nil {
-		err = fmt.Errorf("write filed: %v", err)
+		err = fmt.Errorf("write failed: %v", err)
 		// p.err("Write failed '%s'\n", err)
 		return
 	}
@@ -240,18 +268,20 @@ func parseProtocolAndWriteToTargetConn(buff []byte) (conn io.ReadWriteCloser, re
 	// write rest of the buffer to the target
 	_, err = conn.Write(buff[requestLineLength:])
 	if err != nil {
-		err = fmt.Errorf("write filed: %v", err)
+		err = fmt.Errorf("write failed: %v", err)
 		// p.err("Write failed '%s'\n", err)
 		return
 	}
 
 	return
 }
+*/
 
 func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(src io.ReadWriter) {
 
+	var err error
 	var targetConn io.ReadWriteCloser
-	var reverseReplacer ReplacerFunc
+	// var reverseReplacer ReplacerFunc
 	// var reverseReplacer func([]byte) []byte
 
 	var buff bytes.Buffer
@@ -261,32 +291,42 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(src io.ReadWriter) {
 	for {
 		N, err := src.Read(hbuff)
 		if err != nil {
-			p.err("Read failed", err)
+			p.err("select-target: incomming read failed", err)
 			return
 		}
 
 		// does this ever happen?
 		if N == 0 {
-			log.Println("warning: read returned empty buffer")
+			log.Warn("proxy: select-target: incomming read returned empty buffer")
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
 		n, err := buff.Write(hbuff[:N])
+		if err != nil {
+			p.err("select-target: incomming head buffer write failed", err)
+			return
+		}
 		if n < N {
-			p.err("protocol head buffer too small or invalid protocol", nil)
+			p.err("select-target: incomplete write to incomming head buffer", nil)
+			// p.err("protocol head buffer too small or invalid protocol", nil)
 			return
 		}
 
+		p.resolvedTarget, err = p.targetResolver.Resolve(buff.Bytes())
+
 		// targetConn, reverseReplacer, err = parseProtocolAndWriteToTargetConn(buff.Bytes())
-		targetConn, reverseReplacer, err = p.targetResolver(buff.Bytes())
+		// targetConn, reverseReplacer, err = p.targetResolver(buff.Bytes())
 		if err != nil {
-			p.err("error detecting protocol and target address", err)
+			p.err("select-target: target resolver error", err)
 			return
 		}
-		if targetConn != nil {
+		if p.resolvedTarget != nil {
 			break
 		}
+		// if targetConn != nil {
+		// 	break
+		// }
 	}
 
 	/*
@@ -345,14 +385,49 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(src io.ReadWriter) {
 		}
 	*/
 
-	defer targetConn.Close()
+	remoteAddress := p.resolvedTarget.RemoteAddress()
 
-	if reverseReplacer != nil {
-		targetConn = reverseReplacer(targetConn)
+	log.Info("connecting to remote address", remoteAddress)
+
+	if connectTarget, ok := p.resolvedTarget.(ResolvedTargetConnection); ok {
+		targetConn, err = connectTarget.Connect()
+		if err != nil {
+			p.err(fmt.Sprintf("select-target: remote connection to %s failed", remoteAddress), err)
+			return
+		}
+	} else {
+		targetConn, err = net.Dial("tcp", remoteAddress)
+		if err != nil {
+			p.err(fmt.Sprintf("select-target: remote connection to %s failed", remoteAddress), err)
+			return
+		}
+
+		defer targetConn.Close()
+	}
+
+	headData := p.resolvedTarget.HeadData()
+
+	n, err := targetConn.Write(headData)
+	if err != nil {
+		p.err("select-target: remote connection head data write failed", err)
+		return
+	}
+
+	if n < len(headData) {
+		p.err("select-target: remote connection head data write incomplete", nil)
+		return
+	}
+
+	// if reverseReplacer != nil {
+	// 	targetConn = reverseReplacer(targetConn)
+	// }
+
+	if p.CORS {
+		targetConn = NewHTTPCORSInject(targetConn)
 	}
 
 	// pipe in reverse direction in a separate goroutine
-	go p.pipe(targetConn, p.proxyConn /*, reverseReplacer*/)
+	go p.pipe(targetConn, p.proxyConn /*, reverseReplacer*/, p.resolvedTarget != nil)
 
-	p.pipe(p.proxyConn, targetConn /*, nil*/)
+	p.pipe(p.proxyConn, targetConn /*, nil*/, false)
 }
