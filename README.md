@@ -3,7 +3,7 @@
 Run
 
 ```
-./docker-spaces -p 8888 -docker DOCKER-ENGINE-URL -start 1 -stop 2 -remove 3
+./docker-spaces -p 8888 -docker DOCKER-ENGINE-URL --user USER --password PASSWORD
 ```
 
 where DOCKER-ENGINE-URL is in any form of
