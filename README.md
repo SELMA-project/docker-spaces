@@ -39,7 +39,7 @@ To enable docker engine connection via SSH to macOS docker host, add the followi
 
 to `~/.bashrc` or `~/.zshenv`.
 
-# Queueing logic for x-type jobs
+# Queueing logic
 
 * x-type jobs are queued and executed one-at-the-time on the container; multiple containers are automatically started to handle a heavy queue.
 * y-type jobs are not queued and are immediately connected to the single shared container.
