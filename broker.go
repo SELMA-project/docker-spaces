@@ -475,7 +475,8 @@ func (b *Broker) Run() {
 				}
 			}
 
-			if oldestTCP != nil && oldestRUNNER != nil && oldestRUNNERtime < (now-6*int64(time.Second)) && oldestTCPtime < (now-6*int64(time.Second)) {
+			if oldestTCP != nil && oldestRUNNER != nil && oldestRUNNERtime < (now-6) && oldestTCPtime < (now-6) {
+				log.Debug("broker: starting another copy of container")
 				oldestRUNNER.state = BrokerSlotStateStarting
 				oldestRUNNER.slotType = oldestTCP.slotType
 				oldestRUNNER.since = now
@@ -507,7 +508,7 @@ func (b *Broker) Run() {
 
 		// GB: kill/stop visus konteinerus, kuri 30min nevar piestarteties vai nostradat
 		for _, slotD := range b.dockerSlots {
-			if slotD.since < (now-1800*int64(time.Second)) && (slotD.state == BrokerSlotStateRun || slotD.state == BrokerSlotStateStarting) {
+			if slotD.since < (now-1800) && (slotD.state == BrokerSlotStateRun || slotD.state == BrokerSlotStateStarting) {
 				slotD.state = BrokerSlotStateFree
 				slotD.slotType = ""
 				slotD.since = 0
