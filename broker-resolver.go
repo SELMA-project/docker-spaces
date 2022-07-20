@@ -135,11 +135,14 @@ func (r *BrokerTargetResolver) Resolve(buff []byte) (target ResolvedTarget, err 
 				err = fmt.Errorf("broker-resolver: invalid dynamic run path: %w", err)
 				return
 			}
+
+			log.Info("broker-resolver: dynamic path matched by referrer header")
 		}
 	}
 
 	if containerInfo == nil {
 		// not a dynamic run path
+		log.Debug("broker-resolver: not a dynamic request:", req.Method, req.Path)
 		return
 	}
 
