@@ -81,7 +81,7 @@ func ParseHTTPResponse(buff []byte) (r *ParsedHTTPResponse, err error) {
 		return
 	}
 
-	headers, err := parseHTTPHeaders(strings.Split(string(buff[endOfHeaders]), "\r\n")[1:]) // exclude first (request/status) line
+	headers, err := parseHTTPHeaders(strings.Split(string(buff[statusLineLength:endOfHeaders]), "\r\n"))
 	if err != nil {
 		return
 	}
@@ -211,7 +211,7 @@ func ParseHTTPRequest(buff []byte) (r *ParsedHTTPRequest, err error) {
 		return
 	}
 
-	headers, err := parseHTTPHeaders(strings.Split(string(buff[endOfHeaders]), "\r\n")[1:]) // exclude first (request/status) line
+	headers, err := parseHTTPHeaders(strings.Split(string(buff[requestLineLength:endOfHeaders]), "\r\n"))
 	if err != nil {
 		return
 	}
