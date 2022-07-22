@@ -104,7 +104,7 @@ func (p *DynamicReverseProxy) err(s string, err error) {
 	}
 	if err != io.EOF {
 		// p.Log.Warn(s, err)
-		log.Error("proxy: %s: %v", s, err)
+		log.Errorf("proxy: %s: %v", s, err)
 	}
 	p.errsig <- true
 	p.erred = true
