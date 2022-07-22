@@ -163,6 +163,11 @@ func (r *DockerRunner) start(image string, internalPort int) (err error) {
 
 	log.Trace("docker-runner: start: create container response:", response)
 
+	if response.StatusCode != 201 {
+		err = fmt.Errorf("start: unable to create container, docker engine returned %d status code", response.StatusCode)
+		return
+	}
+
 	if !response.IsJSON {
 		err = fmt.Errorf("start: invalid response from docker engine API: response is not JSON, response: %+v", response)
 		response.Close()
@@ -170,7 +175,13 @@ func (r *DockerRunner) start(image string, internalPort int) (err error) {
 	}
 
 	resp := response.JSON.(map[string]interface{})
-	id = resp["Id"].(string)
+
+	if _id, present := resp["Id"]; present {
+		id = _id.(string)
+	} else {
+		err = fmt.Errorf("start: invalid response from docker engine API: id field is missing")
+		return
+	}
 
 	response.Close()
 
@@ -328,6 +339,7 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 
 			err := r.start(containerInfo.image, containerInfo.port)
 			if err != nil {
+				log.Debug("docker-runner: run: start container error:", err)
 				slot.Send(NewBrokerMessage(BrokerMessageError, nil)) // parameter?
 				break
 			}
