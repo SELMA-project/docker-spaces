@@ -314,10 +314,14 @@ func (b *Broker) Run() {
 				dockerSlot.refInfo = message.Payload()
 				dockerSlot.since = now
 			case BrokerMessageError:
-				dockerSlot.oppositeSlot.send(NewBrokerMessage(BrokerMessageError, "Image does not exist"))
+				// if dockerSlot == dockerSlot.oppositeSlot.oppositeSlot {
+				if false {
+					dockerSlot.oppositeSlot.send(NewBrokerMessage(BrokerMessageError, "Image does not exist"))
+					// dockerSlot.oppositeSlot.state = BrokerSlotStateFree
+				}
 				dockerSlot.state = BrokerSlotStateFree
 				dockerSlot.slotType = ""
-				dockerSlot.since = now
+				dockerSlot.since = 0 // now
 
 				// A: no such image in DockerHub --> signal ERROR to TCPopposite and goto FREE
 				// B: no resources on the host to start a new container --> kill old & set FREE(NIL)+NOW and keep trying in 2 sec
@@ -375,7 +379,7 @@ func (b *Broker) Run() {
 			waitOnlySlotTypes := make(map[string]int) // aqueues
 
 			for _, slot := range b.tcpSlots {
-				if slot.state == BrokerSlotStateWait {
+				if slot.state == BrokerSlotStateWait && slot.oppositeSlot == nil {
 					waitSlotTypes[slot.slotType]++
 				}
 			}

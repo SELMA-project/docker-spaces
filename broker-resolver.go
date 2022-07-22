@@ -170,6 +170,7 @@ func (r *BrokerTargetResolver) Resolve(buff []byte) (target ResolvedTarget, err 
 		remoteAddress = message.PayloadString()
 	case BrokerMessageError:
 		err = fmt.Errorf("borker-resolver: broker error: %v", message.PayloadString())
+		// slot.Send(NewBrokerMessage(BrokerMessageRelease, false))
 		return
 	default:
 		err = fmt.Errorf("broker-resolver: unknown message from broker: %v", message)
