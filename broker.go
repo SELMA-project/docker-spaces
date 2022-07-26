@@ -314,11 +314,16 @@ func (b *Broker) Run() {
 				dockerSlot.refInfo = message.Payload()
 				dockerSlot.since = now
 			case BrokerMessageError:
-				// if dockerSlot == dockerSlot.oppositeSlot.oppositeSlot {
-				if false {
-					dockerSlot.oppositeSlot.send(NewBrokerMessage(BrokerMessageError, "Image does not exist"))
-					// dockerSlot.oppositeSlot.state = BrokerSlotStateFree
+
+				for _, tcpSlot := range b.tcpSlots {
+					if tcpSlot.state == BrokerSlotStateWait && tcpSlot.slotType == dockerSlot.slotType {
+						b.freeSourceSlots <- tcpSlot
+						tcpSlot.state = BrokerSlotStateFree
+						tcpSlot.send(NewBrokerMessage(BrokerMessageError, "Image does not exist"))
+					}
+
 				}
+
 				dockerSlot.state = BrokerSlotStateFree
 				dockerSlot.slotType = ""
 				dockerSlot.since = 0 // now
