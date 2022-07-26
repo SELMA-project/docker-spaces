@@ -57,8 +57,9 @@ func ParseHTTPResponse(buff []byte) (r *ParsedHTTPResponse, err error) {
 
 	parts := strings.Split(string(buff[:statusLineLength]), " ")
 
-	if len(parts) != 3 {
-		err = fmt.Errorf("parse-http-response: input packet does not look like HTTP response, has %d parts instead of required 3 parts", len(parts))
+	if len(parts) < 3 {
+		err = fmt.Errorf("parse-http-response: input packet does not look like HTTP response, has %d parts instead of required at least 3 parts: %s",
+			len(parts), string(buff[:statusLineLength]))
 		return
 	}
 
