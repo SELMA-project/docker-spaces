@@ -17,6 +17,35 @@ type ResolvedTarget interface {
 	Closed()
 }
 
+type BasicResolvedTarget struct {
+	Address          string
+	Data             []byte
+	ActivityCallback func()
+	ClosedCallback   func()
+}
+
+func (t *BasicResolvedTarget) RemoteAddress() string {
+	return t.Address
+}
+
+func (t *BasicResolvedTarget) HeadData() []byte {
+	return t.Data
+}
+
+func (t *BasicResolvedTarget) Activity() {
+	if t.ActivityCallback != nil {
+		t.ActivityCallback()
+	}
+	return
+}
+
+func (t *BasicResolvedTarget) Closed() {
+	if t.ClosedCallback != nil {
+		t.ClosedCallback()
+	}
+	return
+}
+
 type ResolvedTargetConnection interface {
 	Connect() (io.ReadWriteCloser, error)
 }
