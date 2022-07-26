@@ -110,7 +110,11 @@ func main() {
 	// start broker
 	go broker.Run()
 
-	resolver := BrokerTargetResolver{broker}
+	hostResolver := &HostTargetResolver{}
+
+	brokerResolver := &BrokerTargetResolver{broker}
+
+	httpResolver := NewHTTPProtocolTargetResolver(hostResolver, brokerResolver)
 
 	for {
 		conn, err := listener.Accept()
@@ -120,7 +124,8 @@ func main() {
 			continue
 		}
 
-		p := NewDynamicReverseProxy(conn, &resolver)
+		// p := NewDynamicReverseProxy(conn, &resolver)
+		p := NewDynamicReverseProxy(conn, httpResolver)
 
 		p.CORS = enableCORS
 
