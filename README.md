@@ -42,4 +42,5 @@ to `~/.bashrc` or `~/.zshenv`.
 # Queueing logic
 
 * x-type jobs are queued and executed one-at-the-time on the container; multiple containers are automatically started to handle a heavy queue.
-* y-type jobs are not queued and are immediately connected to the single shared container.
+* y-type jobs are not queued and are immediately connected to the single shared container, which is automatically started on the first request.
+* h-type jobs are not queued and are immediately connected to the specified host:port (container must be started/stopped manually, e.g. with "docker-compose up -d")
