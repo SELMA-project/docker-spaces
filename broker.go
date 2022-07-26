@@ -161,9 +161,11 @@ type Broker struct {
 	dockerSlots []*BrokerSlot
 	SourceName  string
 	TargetName  string
+
+	LoopSleep int // in milliseconds
 }
 
-func NewBroker(sourceSlotCount, targetSlotCount int) *Broker {
+func NewBroker(sourceSlotCount, targetSlotCount, sleepMS int) *Broker {
 	freeSourceSlots := make(chan *BrokerSlot, sourceSlotCount)
 	freeTargetSlots := make(chan *BrokerSlot, targetSlotCount)
 	sourceSlots := make([]*BrokerSlot, sourceSlotCount)
@@ -179,7 +181,10 @@ func NewBroker(sourceSlotCount, targetSlotCount int) *Broker {
 		targetSlots[i] = slot
 		freeTargetSlots <- slot
 	}
-	return &Broker{freeSourceSlots: freeSourceSlots, freeTargetSlots: freeTargetSlots, tcpSlots: sourceSlots, dockerSlots: targetSlots, SourceName: "Source", TargetName: "Target"}
+	if sleepMS == 0 {
+		sleepMS = 1
+	}
+	return &Broker{freeSourceSlots: freeSourceSlots, freeTargetSlots: freeTargetSlots, tcpSlots: sourceSlots, dockerSlots: targetSlots, SourceName: "Source", TargetName: "Target", LoopSleep: sleepMS}
 }
 
 // TCP side API
@@ -207,6 +212,10 @@ func yType(slotType string) bool {
 }
 
 func (b *Broker) Run() {
+
+	if b.LoopSleep == 0 {
+		b.LoopSleep = 1
+	}
 
 	for {
 
@@ -484,7 +493,7 @@ func (b *Broker) Run() {
 				}
 			}
 
-			if oldestTCP != nil && oldestRUNNER != nil && oldestRUNNERtime < (now-6) && oldestTCPtime < (now-6) {
+			if oldestTCP != nil && oldestRUNNER != nil && oldestRUNNERtime < (now-4*int64(b.LoopSleep)/1000) && oldestTCPtime < (now-4*int64(b.LoopSleep)/1000) {
 				log.Debug("broker: starting another copy of container")
 				oldestRUNNER.state = BrokerSlotStateStarting
 				oldestRUNNER.slotType = oldestTCP.slotType
@@ -528,6 +537,6 @@ func (b *Broker) Run() {
 		// Nosacījums: eksiste FREE dokeris ar SINCE > 6 sekundem &&& eksiste TCP WAIT bez opositeIndex (nem ar vecako SINCE); atkarto kamer tadi ir
 
 		// log.Trance("Broker: wait 2 sec")
-		time.Sleep(2 * time.Second)
+		time.Sleep(time.Duration(b.LoopSleep) * time.Millisecond)
 	}
 }

@@ -23,6 +23,7 @@ func main() {
 	var startPort int = 9100
 	var sourceSlots int = 3
 	var targetSlots int = 5
+	var sleepMS int = 2000
 
 	flag.IntVar(&port, "port", port, "port number")
 	flag.IntVar(&port, "p", port, "port number")
@@ -39,6 +40,7 @@ func main() {
 	flag.IntVar(&startPort, "start-port", startPort, "start port of docker containers port range")
 	flag.IntVar(&sourceSlots, "source", sourceSlots, "number of source (TCP) slots")
 	flag.IntVar(&targetSlots, "target", targetSlots, "number of target (docker) slots")
+	flag.IntVar(&sleepMS, "loop-sleep", sleepMS, "broker loop sleep in milliseconds")
 
 	flag.Parse()
 
@@ -72,7 +74,7 @@ func main() {
 
 	dockerAuth := &DockerAuth{Username: registryUsername, Password: registryPassword, Email: registryEmail, ServerAddress: registryAddress}
 
-	broker := NewBroker(sourceSlots, targetSlots)
+	broker := NewBroker(sourceSlots, targetSlots, sleepMS)
 
 	broker.SourceName = "TCP"
 	broker.TargetName = "Docker"
