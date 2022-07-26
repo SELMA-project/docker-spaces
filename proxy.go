@@ -59,14 +59,14 @@ type DynamicReverseProxy struct {
 	// remoteHosts *[]RemoteHost
 
 	// targetResolver TargetResolverFunc
-	targetResolver TargetResolver
-	resolvedTarget ResolvedTarget
+	targetResolvers []TargetResolver
+	resolvedTarget  ResolvedTarget
 }
 
 // TODO: target address chooser ?
 
 // func NewDynamicReverseProxy(proxyConn net.Conn /* proxyAddress string, */, targetResolver TargetResolverFunc) *DynamicReverseProxy {
-func NewDynamicReverseProxy(proxyConn net.Conn /* proxyAddress string, */, targetResolver TargetResolver) *DynamicReverseProxy {
+func NewDynamicReverseProxy(proxyConn net.Conn /* proxyAddress string, */, targetResolvers ...TargetResolver) *DynamicReverseProxy {
 	return &DynamicReverseProxy{
 		proxyConn: proxyConn,
 		// proxyAddress: proxyAddress,
@@ -77,7 +77,7 @@ func NewDynamicReverseProxy(proxyConn net.Conn /* proxyAddress string, */, targe
 		erred:  false,
 		errsig: make(chan bool),
 		// Log:    NullLogger{},
-		targetResolver: targetResolver,
+		targetResolvers: targetResolvers,
 	}
 }
 
@@ -313,16 +313,28 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(src io.ReadWriter) {
 			return
 		}
 
-		p.resolvedTarget, err = p.targetResolver.Resolve(buff.Bytes())
+		for _, targetResolver := range p.targetResolvers {
 
-		// targetConn, reverseReplacer, err = parseProtocolAndWriteToTargetConn(buff.Bytes())
-		// targetConn, reverseReplacer, err = p.targetResolver(buff.Bytes())
-		if err != nil {
-			p.err("select-target: target resolver error", err)
-			return
+			p.resolvedTarget, err = targetResolver.Resolve(buff.Bytes())
+
+			// targetConn, reverseReplacer, err = parseProtocolAndWriteToTargetConn(buff.Bytes())
+			// targetConn, reverseReplacer, err = p.targetResolver(buff.Bytes())
+			if err != nil {
+				continue
+				// p.err("select-target: target resolver error", err)
+				// return
+			}
+			if p.resolvedTarget != nil {
+				log.Trace("proxy: resolved target address:", p.resolvedTarget.RemoteAddress())
+				break
+			}
 		}
-		if p.resolvedTarget != nil {
+
+		if p.resolvedTarget != nil && err == nil {
 			break
+		} else if err != nil {
+			p.err("select-target: unable to resolve target, last error", err)
+			return
 		}
 		// if targetConn != nil {
 		// 	break
