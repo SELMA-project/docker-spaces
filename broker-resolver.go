@@ -94,10 +94,17 @@ func (r *BrokerTargetResolver) parseURLPath(path string) (pathRewrite string, yT
 
 func (r *BrokerTargetResolver) Resolve(buff []byte) (target ResolvedTarget, err error) {
 
-	req, err := ParseHTTPRequest(buff)
-	if req == nil {
+	request, err := ParseHTTPRequest(buff)
+	if request == nil {
 		return
 	}
+
+	target, err = r.ResolveHTTPRequest(request)
+
+	return
+}
+
+func (r *BrokerTargetResolver) ResolveHTTPRequest(req *ParsedHTTPRequest) (target ResolvedTarget, err error) {
 
 	log.Debug("broker-resolver: got HTTP request:", req.Method, req.Path, req.Version)
 	// log.Debug("broker-resolver: got HTTP Headers", req.Headers)
