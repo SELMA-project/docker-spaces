@@ -407,7 +407,10 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(src io.ReadWriter) {
 			p.err(fmt.Sprintf("select-target: remote connection to %s failed", remoteAddress), err)
 			return
 		}
+
+		defer targetConn.Close()
 	} else {
+		log.Trace("proxy: connecting to target:", remoteAddress)
 		targetConn, err = net.Dial("tcp", remoteAddress)
 		if err != nil {
 			p.err(fmt.Sprintf("select-target: remote connection to %s failed", remoteAddress), err)
