@@ -306,10 +306,10 @@ func parseProtocolAndWriteToTargetConn(buff []byte) (conn io.ReadWriteCloser, re
 }
 */
 
-func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(src io.ReadWriter) {
+func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(proxyConn io.ReadWriter) {
 
 	var err error
-	var targetConn io.ReadWriteCloser
+	var targetConn io.ReadWriter
 	// var reverseReplacer ReplacerFunc
 	// var reverseReplacer func([]byte) []byte
 
@@ -318,7 +318,7 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(src io.ReadWriter) {
 	hbuff := make([]byte, 0xfff)
 
 	for {
-		N, err := src.Read(hbuff)
+		N, err := proxyConn.Read(hbuff)
 		if err != nil {
 			p.err("select-target: incomming read failed", err)
 			return
@@ -431,22 +431,28 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(src io.ReadWriter) {
 	log.Info("connecting to remote address", remoteAddress)
 
 	if connectTarget, ok := p.resolvedTarget.(ResolvedTargetConnection); ok {
-		targetConn, err = connectTarget.Connect()
+		var conn io.ReadWriteCloser
+		conn, err = connectTarget.Connect()
 		if err != nil {
 			p.err(fmt.Sprintf("select-target: remote connection to %s failed", remoteAddress), err)
 			return
 		}
 
-		defer targetConn.Close()
+		defer conn.Close()
+
+		targetConn = conn
 	} else {
 		log.Trace("proxy: connecting to target:", remoteAddress)
-		targetConn, err = net.Dial("tcp", remoteAddress)
+		var conn io.ReadWriteCloser
+		conn, err = net.Dial("tcp", remoteAddress)
 		if err != nil {
 			p.err(fmt.Sprintf("select-target: remote connection to %s failed", remoteAddress), err)
 			return
 		}
 
-		defer targetConn.Close()
+		defer conn.Close()
+
+		targetConn = conn
 	}
 
 	headData := p.resolvedTarget.HeadData()
@@ -471,7 +477,7 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(src io.ReadWriter) {
 	}
 
 	// pipe in reverse direction in a separate goroutine
-	go p.pipe(targetConn, p.proxyConn /*, reverseReplacer*/, p.resolvedTarget != nil)
+	go p.pipe(targetConn, proxyConn /*, reverseReplacer*/, p.resolvedTarget != nil)
 
-	p.pipe(p.proxyConn, targetConn /*, nil*/, false)
+	p.pipe(proxyConn, targetConn /*, nil*/, false)
 }
