@@ -112,11 +112,13 @@ func main() {
 	// start broker
 	go broker.Run()
 
+	dockerResolver := &DockerTargetResolver{}
+
 	hostResolver := &HostTargetResolver{}
 
 	brokerResolver := &BrokerTargetResolver{broker}
 
-	httpResolver := NewHTTPProtocolTargetResolver(hostResolver, brokerResolver)
+	httpResolver := NewHTTPProtocolTargetResolver(dockerResolver, hostResolver, brokerResolver)
 
 	for {
 		conn, err := listener.Accept()
