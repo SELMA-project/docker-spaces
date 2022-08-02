@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+type ProxyConnectionWrapper interface {
+	WrapProxyConnection(io.ReadWriter) io.ReadWriter
+}
+
 type ResolvedTarget interface {
 	RemoteAddress() string
 	HeadData() []byte
@@ -306,12 +310,38 @@ func parseProtocolAndWriteToTargetConn(buff []byte) (conn io.ReadWriteCloser, re
 }
 */
 
+type ReadWriterWithPrefixBuffer struct {
+	inner  io.ReadWriter
+	prefix *bytes.Buffer
+}
+
+func NewReadWriterWithPrefixBuffer(conn io.ReadWriter, prefix []byte) *ReadWriterWithPrefixBuffer {
+	return &ReadWriterWithPrefixBuffer{inner: conn, prefix: bytes.NewBuffer(prefix)}
+}
+
+func (r *ReadWriterWithPrefixBuffer) Read(buff []byte) (n int, err error) {
+
+	if r.prefix.Len() > 0 {
+		n, err = r.prefix.Read(buff)
+	} else {
+		n, err = r.inner.Read(buff)
+	}
+
+	return
+}
+
+func (r *ReadWriterWithPrefixBuffer) Write(buff []byte) (n int, err error) {
+	return r.inner.Write(buff)
+}
+
 func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(proxyConn io.ReadWriter) {
 
 	var err error
 	var targetConn io.ReadWriter
 	// var reverseReplacer ReplacerFunc
 	// var reverseReplacer func([]byte) []byte
+
+	// proxyConn = NewReadWriterLogger(proxyConn, "PROXY connection")
 
 	var buff bytes.Buffer
 
@@ -360,6 +390,9 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(proxyConn io.ReadWri
 		}
 
 		if p.resolvedTarget != nil && err == nil {
+			if _, ok := p.resolvedTarget.(ProxyConnectionWrapper); ok {
+				proxyConn = NewReadWriterWithPrefixBuffer(proxyConn, buff.Bytes())
+			}
 			break
 		} else if err != nil {
 			p.err("select-target: unable to resolve target, last error", err)
@@ -455,25 +488,46 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(proxyConn io.ReadWri
 		targetConn = conn
 	}
 
-	headData := p.resolvedTarget.HeadData()
+	// targetConn = NewReadWriterLogger(targetConn, "TARGET connection")
 
-	n, err := targetConn.Write(headData)
-	if err != nil {
-		p.err("select-target: remote connection head data write failed", err)
-		return
-	}
+	/*
+		headData := p.resolvedTarget.HeadData()
 
-	if n < len(headData) {
-		p.err("select-target: remote connection head data write incomplete", nil)
-		return
-	}
+		n, err := targetConn.Write(headData)
+		if err != nil {
+			p.err("select-target: remote connection head data write failed", err)
+			return
+		}
+
+		if n < len(headData) {
+			p.err("select-target: remote connection head data write incomplete", nil)
+			return
+		}
+	*/
 
 	// if reverseReplacer != nil {
 	// 	targetConn = reverseReplacer(targetConn)
 	// }
 
 	if p.CORS {
-		targetConn = NewHTTPCORSInject(targetConn)
+		// targetConn = NewHTTPCORSInject(targetConn)
+	}
+
+	if proxyConnWrapper, ok := p.resolvedTarget.(ProxyConnectionWrapper); ok {
+		proxyConn = proxyConnWrapper.WrapProxyConnection(proxyConn)
+	} else {
+		headData := p.resolvedTarget.HeadData()
+
+		n, err := targetConn.Write(headData)
+		if err != nil {
+			p.err("select-target: remote connection head data write failed", err)
+			return
+		}
+
+		if n < len(headData) {
+			p.err("select-target: remote connection head data write incomplete", nil)
+			return
+		}
 	}
 
 	// pipe in reverse direction in a separate goroutine
