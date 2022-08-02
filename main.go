@@ -5,9 +5,24 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 )
 
 var log LevelLoggerCompatible = NewCompatibleDefaultLevelLogger()
+
+// https://stackoverflow.com/a/45494246
+// Created so that multiple inputs can be accecpted
+type stringFlags []string
+
+func (self *stringFlags) String() string {
+	return fmt.Sprintf("%v", *self)
+}
+
+func (self *stringFlags) Set(value string) error {
+	*self = append(*self, strings.TrimSpace(value))
+	return nil
+}
 
 func main() {
 	var port int = 8888
@@ -24,6 +39,9 @@ func main() {
 	var sourceSlots int = 3
 	var targetSlots int = 5
 	var sleepMS int = 2000
+	var clusterDefs stringFlags
+
+	// <host-start-port>:<target-slot(docker-runner)-count>:<docker-host-url>
 
 	flag.IntVar(&port, "port", port, "port number")
 	flag.IntVar(&port, "p", port, "port number")
@@ -41,6 +59,7 @@ func main() {
 	flag.IntVar(&sourceSlots, "source", sourceSlots, "number of source (TCP) slots")
 	flag.IntVar(&targetSlots, "target", targetSlots, "number of target (docker) slots")
 	flag.IntVar(&sleepMS, "loop-sleep", sleepMS, "broker loop sleep in milliseconds")
+	flag.Var(&clusterDefs, "cluster", "cluster configuration in following format: <host-start-port>:<target-slot(docker-runner)-count>:<docker-host-url>")
 
 	flag.Parse()
 
@@ -74,40 +93,119 @@ func main() {
 
 	dockerAuth := &DockerAuth{Username: registryUsername, Password: registryPassword, Email: registryEmail, ServerAddress: registryAddress}
 
+	type Cluster struct {
+		dockerHost      string
+		startPort       int
+		targetSlotCount int
+	}
+
+	clusters := make([]*Cluster, 0, len(clusterDefs))
+
+	totalTargetSlotCount := 0
+
+	for _, clusterDef := range clusterDefs {
+
+		ps := strings.SplitN(clusterDef, ":", 3)
+
+		var startPort, targetSlotCount int
+		var err error
+
+		startPort, err = strconv.Atoi(ps[0])
+		if err != nil {
+			log.Fatalf("invalid cluster definition: invalid start port: %w", err)
+		}
+
+		targetSlotCount, err = strconv.Atoi(ps[1])
+		if err != nil {
+			log.Fatalf("invalid cluster definition: invalid target slot count: %w", err)
+		}
+
+		cluster := &Cluster{dockerHost: ps[2], startPort: startPort, targetSlotCount: targetSlotCount}
+		clusters = append(clusters, cluster)
+
+		targetSlots += targetSlotCount
+
+		log.Debugf("got cluster configuration: %+v", cluster)
+	}
+
+	if len(clusters) == 0 {
+		cluster := &Cluster{dockerHost: dockerHost, startPort: startPort, targetSlotCount: targetSlots}
+		clusters = append(clusters, cluster)
+		totalTargetSlotCount += targetSlots
+		log.Debugf("got cluster configuration: %+v", cluster)
+	} else {
+		targetSlots = totalTargetSlotCount
+	}
+
 	broker := NewBroker(sourceSlots, targetSlots, sleepMS)
 
 	broker.SourceName = "TCP"
 	broker.TargetName = "Docker"
 
-	nextContainerPort := startPort
+	// nextContainerPort := startPort
 
-	dockerRunners := make([]*DockerRunner, 0, targetSlots)
+	// dockerRunners := make([]*DockerRunner, 0, targetSlots)
 
 	log.Info("creating docker runners")
 
-	for {
-		dockerSlot := broker.GetTargetSlot()
-		if dockerSlot == nil {
-			break
+	for _, cluster := range clusters {
+
+		nextContainerPort := cluster.startPort
+
+		for count := 0; count < cluster.targetSlotCount; count++ {
+
+			dockerSlot := broker.GetTargetSlot()
+			if dockerSlot == nil {
+				break
+			}
+
+			docker, err := NewDocker(cluster.dockerHost)
+			if err != nil {
+				log.Fatalf("docker error: %v", err)
+				return
+			}
+
+			if len(dockerAuth.Username) > 0 || len(dockerAuth.Email) > 0 {
+				docker.SetAuth(dockerAuth)
+			}
+
+			// for remote docker runner: spawned connection as argument must be provided
+			dockerRunner := NewDockerRunner(docker, nextContainerPort)
+			nextContainerPort++
+
+			// dockerRunners = append(dockerRunners, dockerRunner)
+
+			go dockerRunner.Run(dockerSlot)
 		}
-
-		docker, err := NewDocker(dockerHost)
-		if err != nil {
-			log.Fatalf("docker error: %v", err)
-			return
-		}
-
-		if len(dockerAuth.Username) > 0 || len(dockerAuth.Email) > 0 {
-			docker.SetAuth(dockerAuth)
-		}
-
-		dockerRunner := NewDockerRunner(docker, nextContainerPort)
-		nextContainerPort++
-
-		dockerRunners = append(dockerRunners, dockerRunner)
-
-		go dockerRunner.Run(dockerSlot)
 	}
+
+	// make get target slots blocking again, spawn the loop below for real-time docker-runner introduction (remote vs local?)
+	/*
+		for {
+			dockerSlot := broker.GetTargetSlot()
+			if dockerSlot == nil {
+				break
+			}
+
+			docker, err := NewDocker(dockerHost)
+			if err != nil {
+				log.Fatalf("docker error: %v", err)
+				return
+			}
+
+			if len(dockerAuth.Username) > 0 || len(dockerAuth.Email) > 0 {
+				docker.SetAuth(dockerAuth)
+			}
+
+			// for remote docker runner: spawned connection as argument must be provided
+			dockerRunner := NewDockerRunner(docker, nextContainerPort)
+			nextContainerPort++
+
+			dockerRunners = append(dockerRunners, dockerRunner)
+
+			go dockerRunner.Run(dockerSlot)
+		}
+	*/
 
 	// start broker
 	go broker.Run()
