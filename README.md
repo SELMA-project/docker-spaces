@@ -20,7 +20,8 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 
 ### Features
 
-* [ ] Scaling on multiple hosts
+* [x] Scaling on multiple hosts. Implemented 02/08/2022, example: ./docker-spaces.linux.x86_64 -p 1100 -source 500 -cluster 19100:50:http://111.111.111.111:7878/docker:local;12100:5:unix:///var/run/docker.sock
+      
 * [ ] SQLite DB for accounts (2022spaces), state, config, docker-compose
 
 ### Optional (alternatively, can be implemented via NGINX)
