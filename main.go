@@ -123,7 +123,7 @@ func main() {
 		cluster := &Cluster{dockerHost: ps[2], startPort: startPort, targetSlotCount: targetSlotCount}
 		clusters = append(clusters, cluster)
 
-		targetSlots += targetSlotCount
+		totalTargetSlotCount += targetSlotCount
 
 		log.Debugf("got cluster configuration: %+v", cluster)
 	}
@@ -149,6 +149,8 @@ func main() {
 	log.Info("creating docker runners")
 
 	for _, cluster := range clusters {
+
+		log.Trace("creating docker runners for cluster:", cluster.dockerHost)
 
 		nextContainerPort := cluster.startPort
 
@@ -178,6 +180,8 @@ func main() {
 			go dockerRunner.Run(dockerSlot)
 		}
 	}
+
+	log.Info("docker runners created")
 
 	// make get target slots blocking again, spawn the loop below for real-time docker-runner introduction (remote vs local?)
 	/*
