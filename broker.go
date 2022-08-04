@@ -157,8 +157,8 @@ type Broker struct {
 	freeTargetSlots chan *BrokerSlot
 	// source slots
 	// target slots
-	tcpSlots    []*BrokerSlot
-	dockerSlots []*BrokerSlot
+	sourceSlots []*BrokerSlot
+	targetSlots []*BrokerSlot
 	SourceName  string
 	TargetName  string
 
@@ -184,7 +184,7 @@ func NewBroker(sourceSlotCount, targetSlotCount, sleepMS int) *Broker {
 	if sleepMS == 0 {
 		sleepMS = 1
 	}
-	return &Broker{freeSourceSlots: freeSourceSlots, freeTargetSlots: freeTargetSlots, tcpSlots: sourceSlots, dockerSlots: targetSlots, SourceName: "Source", TargetName: "Target", LoopSleep: sleepMS}
+	return &Broker{freeSourceSlots: freeSourceSlots, freeTargetSlots: freeTargetSlots, sourceSlots: sourceSlots, targetSlots: targetSlots, SourceName: "Source", TargetName: "Target", LoopSleep: sleepMS}
 }
 
 // TCP side API
@@ -221,54 +221,54 @@ func (b *Broker) Run() {
 
 		now := time.Now().Unix()
 
-		for _, tcpSlot := range b.tcpSlots {
-			if tcpSlot.empty() /* || tcpSlot.state == BrokerSlotStateFree */ { // GB ignore neizmantotos TCP slotus
+		for _, sourceSlot := range b.sourceSlots {
+			if sourceSlot.empty() /* || sourceSlot.state == BrokerSlotStateFree */ { // GB ignore neizmantotos TCP slotus
 				continue
 			}
 
-			message := tcpSlot.read()
+			message := sourceSlot.read()
 			log.Tracef("broker: got %s message: %s", b.SourceName, message)
 
 			switch message.Type() {
 			case BrokerMessageRelease:
-				if tcpSlot.state != BrokerSlotStateRun || yType(tcpSlot.slotType) { // GB: yType testu vajag uzprogrammet
-					b.freeSourceSlots <- tcpSlot
-					tcpSlot.state = BrokerSlotStateFree // GB: lai ciklos var atskirt TCPslotus, kas netiek lietoti
+				if sourceSlot.state != BrokerSlotStateRun || yType(sourceSlot.slotType) { // GB: yType testu vajag uzprogrammet
+					b.freeSourceSlots <- sourceSlot
+					sourceSlot.state = BrokerSlotStateFree // GB: lai ciklos var atskirt TCPslotus, kas netiek lietoti
 					break
 				}
-				// dockerSlot := b.dockerSlots[tcpSlot.oppositeIndex]
-				dockerSlot := tcpSlot.oppositeSlot
-				dockerSlot.state = BrokerSlotStateFree
-				dockerSlot.since = now
+				// targetSlot := b.targetSlots[sourceSlot.oppositeIndex]
+				targetSlot := sourceSlot.oppositeSlot
+				targetSlot.state = BrokerSlotStateFree
+				targetSlot.since = now
 				kill := message.PayloadBool()
 				if kill {
-					// dockerSlot.image = "" // nil
-					dockerSlot.slotType = ""
-					dockerSlot.state = BrokerSlotStateFree
-					dockerSlot.since = 0
+					// targetSlot.image = "" // nil
+					targetSlot.slotType = ""
+					targetSlot.state = BrokerSlotStateFree
+					targetSlot.since = 0
 					// set docker type to none ?
 					// kill docker
 				}
-				b.freeSourceSlots <- tcpSlot
+				b.freeSourceSlots <- sourceSlot
 			case BrokerMessageAcquire:
 				// type acq struct {
 				// 	image string
 				// 	port  int
 				// }
 				// payload := message.Payload().(acq)
-				// tcpSlot.image = payload.image
-				// tcpSlot.image = message.PayloadString() // image + port = repository:tag:port
+				// sourceSlot.image = payload.image
+				// sourceSlot.image = message.PayloadString() // image + port = repository:tag:port
 				data := message.AcquirePayload()
-				tcpSlot.slotType = data.SlotType
-				tcpSlot.runInfo = data.Payload
-				tcpSlot.since = now
-				tcpSlot.state = BrokerSlotStateWait
-				tcpSlot.oppositeSlot = nil
+				sourceSlot.slotType = data.SlotType
+				sourceSlot.runInfo = data.Payload
+				sourceSlot.since = now
+				sourceSlot.state = BrokerSlotStateWait
+				sourceSlot.oppositeSlot = nil
 
 				// TODO: check for empty image string
 				// TODO: what to do if empty image is passed
-				// if len(tcpSlot.image) == 0 {
-				if len(tcpSlot.slotType) == 0 {
+				// if len(sourceSlot.image) == 0 {
+				if len(sourceSlot.slotType) == 0 {
 					// TODO: fail
 					log.Fatalf("broker: empty slot type from %s", b.SourceName)
 				}
@@ -276,23 +276,23 @@ func (b *Broker) Run() {
 				// jāatrod brīvs dokeris
 				// sūta start, lai piestartē docker container
 				/*
-					for _, dockerSlot := range b.dockerSlots {
-						// if dockerSlot.state == BrokerSlotStateFree && dockerSlot.image == tcpSlot.image {
-						if dockerSlot.state == BrokerSlotStateFree && dockerSlot.slotType == tcpSlot.slotType {
+					for _, targetSlot := range b.targetSlots {
+						// if targetSlot.state == BrokerSlotStateFree && targetSlot.image == sourceSlot.image {
+						if targetSlot.state == BrokerSlotStateFree && targetSlot.slotType == sourceSlot.slotType {
 							// brīvs konteineris
-							dockerSlot.state = BrokerSlotStateRun
-							// dockerSlot.oppositeIndex = tcpSlot.index
-							// tcpSlot.oppositeIndex = dockerSlot.index
-							// dockerSlot.oppositeSlot = tcpSlot
-							tcpSlot.oppositeSlot = dockerSlot
-							tcpSlot.state = BrokerSlotStateRun
+							targetSlot.state = BrokerSlotStateRun
+							// targetSlot.oppositeIndex = sourceSlot.index
+							// sourceSlot.oppositeIndex = targetSlot.index
+							// targetSlot.oppositeSlot = sourceSlot
+							sourceSlot.oppositeSlot = targetSlot
+							sourceSlot.state = BrokerSlotStateRun
 
-							tcpSlot.send(NewBrokerMessage(BrokerMessageAcquired, dockerSlot.refInfo))
+							sourceSlot.send(NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo))
 						}
 					}
 				*/
 
-				// if tcpSlot.state == BrokerSlotStateWait {
+				// if sourceSlot.state == BrokerSlotStateWait {
 				// 	// neizdevās atrast konteineri
 				// 	// gaida, kamēr docker gals piestartē
 				// }
@@ -301,41 +301,41 @@ func (b *Broker) Run() {
 
 		// now = time.Now().Unix()
 
-		for _, dockerSlot := range b.dockerSlots {
-			if dockerSlot.empty() {
+		for _, targetSlot := range b.targetSlots {
+			if targetSlot.empty() {
 				continue
 			}
 
-			message := dockerSlot.read()
+			message := targetSlot.read()
 			log.Tracef("broker: got %s message: %s", b.TargetName, message)
 
 			switch message.Type() {
 			case BrokerMessageStarted:
-				dockerSlot.state = BrokerSlotStateFree
-				// dockerSlot.image = message.PayloadString()
-				// dockerSlot.slotType = message.PayloadString()
-				dockerSlot.since = now
+				targetSlot.state = BrokerSlotStateFree
+				// targetSlot.image = message.PayloadString()
+				// targetSlot.slotType = message.PayloadString()
+				targetSlot.since = now
 			case BrokerMessageFree:
-				dockerSlot.state = BrokerSlotStateFree
-				// dockerSlot.image = ""
-				dockerSlot.slotType = ""
-				// dockerSlot.remoteAddress = message.PayloadString()
-				dockerSlot.refInfo = message.Payload()
-				dockerSlot.since = now
+				targetSlot.state = BrokerSlotStateFree
+				// targetSlot.image = ""
+				targetSlot.slotType = ""
+				// targetSlot.remoteAddress = message.PayloadString()
+				targetSlot.refInfo = message.Payload()
+				targetSlot.since = now
 			case BrokerMessageError:
 
-				for _, tcpSlot := range b.tcpSlots {
-					if tcpSlot.state == BrokerSlotStateWait && tcpSlot.slotType == dockerSlot.slotType {
-						b.freeSourceSlots <- tcpSlot
-						tcpSlot.state = BrokerSlotStateFree
-						tcpSlot.send(NewBrokerMessage(BrokerMessageError, "Image does not exist"))
+				for _, sourceSlot := range b.sourceSlots {
+					if sourceSlot.state == BrokerSlotStateWait && sourceSlot.slotType == targetSlot.slotType {
+						b.freeSourceSlots <- sourceSlot
+						sourceSlot.state = BrokerSlotStateFree
+						sourceSlot.send(NewBrokerMessage(BrokerMessageError, "Image does not exist"))
 					}
 
 				}
 
-				dockerSlot.state = BrokerSlotStateFree
-				dockerSlot.slotType = ""
-				dockerSlot.since = 0 // now
+				targetSlot.state = BrokerSlotStateFree
+				targetSlot.slotType = ""
+				targetSlot.since = 0 // now
 
 				// A: no such image in DockerHub --> signal ERROR to TCPopposite and goto FREE
 				// B: no resources on the host to start a new container --> kill old & set FREE(NIL)+NOW and keep trying in 2 sec
@@ -344,43 +344,43 @@ func (b *Broker) Run() {
 
 		// ------------
 
-		for _, tcpSlot := range b.tcpSlots {
-			if tcpSlot.state != BrokerSlotStateWait {
+		for _, sourceSlot := range b.sourceSlots {
+			if sourceSlot.state != BrokerSlotStateWait {
 				continue
 			}
 
-			if yType(tcpSlot.slotType) {
+			if yType(sourceSlot.slotType) {
 
-				for _, dockerSlot := range b.dockerSlots {
-					// if dockerSlot.state == BrokerSlotStateFree && dockerSlot.image == tcpSlot.image {
-					if (dockerSlot.state == BrokerSlotStateFree || dockerSlot.state == BrokerSlotStateRun) && dockerSlot.slotType == tcpSlot.slotType {
+				for _, targetSlot := range b.targetSlots {
+					// if targetSlot.state == BrokerSlotStateFree && targetSlot.image == sourceSlot.image {
+					if (targetSlot.state == BrokerSlotStateFree || targetSlot.state == BrokerSlotStateRun) && targetSlot.slotType == sourceSlot.slotType {
 						// brīvs konteineris
-						dockerSlot.state = BrokerSlotStateRun
-						// dockerSlot.oppositeIndex = tcpSlot.index
-						// tcpSlot.oppositeIndex = dockerSlot.index
-						// dockerSlot.oppositeSlot = tcpSlot
-						tcpSlot.oppositeSlot = dockerSlot
-						tcpSlot.state = BrokerSlotStateRun
-						tcpSlot.since = now // GB
+						targetSlot.state = BrokerSlotStateRun
+						// targetSlot.oppositeIndex = sourceSlot.index
+						// sourceSlot.oppositeIndex = targetSlot.index
+						// targetSlot.oppositeSlot = sourceSlot
+						sourceSlot.oppositeSlot = targetSlot
+						sourceSlot.state = BrokerSlotStateRun
+						sourceSlot.since = now // GB
 
-						tcpSlot.send(NewBrokerMessage(BrokerMessageAcquired, dockerSlot.refInfo))
+						sourceSlot.send(NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo))
 					}
 				}
 
 			} else {
-				for _, dockerSlot := range b.dockerSlots {
-					// if dockerSlot.state == BrokerSlotStateFree && dockerSlot.image == tcpSlot.image {
-					if dockerSlot.state == BrokerSlotStateFree && dockerSlot.slotType == tcpSlot.slotType {
+				for _, targetSlot := range b.targetSlots {
+					// if targetSlot.state == BrokerSlotStateFree && targetSlot.image == sourceSlot.image {
+					if targetSlot.state == BrokerSlotStateFree && targetSlot.slotType == sourceSlot.slotType {
 						// brīvs konteineris
-						dockerSlot.state = BrokerSlotStateRun
-						// dockerSlot.oppositeIndex = tcpSlot.index
-						// tcpSlot.oppositeIndex = dockerSlot.index
-						// dockerSlot.oppositeSlot = tcpSlot
-						tcpSlot.oppositeSlot = dockerSlot
-						tcpSlot.state = BrokerSlotStateRun
-						tcpSlot.since = now // GB
+						targetSlot.state = BrokerSlotStateRun
+						// targetSlot.oppositeIndex = sourceSlot.index
+						// sourceSlot.oppositeIndex = targetSlot.index
+						// targetSlot.oppositeSlot = sourceSlot
+						sourceSlot.oppositeSlot = targetSlot
+						sourceSlot.state = BrokerSlotStateRun
+						sourceSlot.since = now // GB
 
-						tcpSlot.send(NewBrokerMessage(BrokerMessageAcquired, dockerSlot.refInfo))
+						sourceSlot.send(NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo))
 					}
 				}
 			}
@@ -392,13 +392,13 @@ func (b *Broker) Run() {
 			runningSlotTypes := make(map[string]int)  // bqueues
 			waitOnlySlotTypes := make(map[string]int) // aqueues
 
-			for _, slot := range b.tcpSlots {
+			for _, slot := range b.sourceSlots {
 				if slot.state == BrokerSlotStateWait && slot.oppositeSlot == nil {
 					waitSlotTypes[slot.slotType]++
 				}
 			}
 
-			for _, slot := range b.dockerSlots {
+			for _, slot := range b.targetSlots {
 				// if slot.state == BrokerSlotStateRun {
 				runningSlotTypes[slot.slotType]++
 				// }
@@ -414,7 +414,7 @@ func (b *Broker) Run() {
 
 			var oldest *BrokerSlot
 
-			for _, slot := range b.dockerSlots {
+			for _, slot := range b.targetSlots {
 				if slot.state == BrokerSlotStateFree {
 					if oldest == nil || oldest.since > slot.since {
 						oldest = slot
@@ -442,7 +442,7 @@ func (b *Broker) Run() {
 
 				var waitingSlot *BrokerSlot
 
-				for _, slot := range b.tcpSlots {
+				for _, slot := range b.sourceSlots {
 					if slot.state == BrokerSlotStateWait && slot.slotType == mostRequestedSlotType {
 						oldest.oppositeSlot = slot
 						waitingSlot = slot
@@ -476,7 +476,7 @@ func (b *Broker) Run() {
 			// Find the oldest unserved TCP slot
 			var oldestTCP *BrokerSlot
 			oldestTCPtime := now
-			for _, slot := range b.tcpSlots {
+			for _, slot := range b.sourceSlots {
 				if slot.state == BrokerSlotStateWait && slot.oppositeSlot == nil && slot.since < oldestTCPtime && yType(slot.slotType) == false {
 					oldestTCP = slot
 					oldestTCPtime = slot.since
@@ -486,7 +486,7 @@ func (b *Broker) Run() {
 			// Find the oldest free DockerRunner slot
 			var oldestRUNNER *BrokerSlot
 			oldestRUNNERtime := now
-			for _, slot := range b.dockerSlots {
+			for _, slot := range b.targetSlots {
 				if slot.state == BrokerSlotStateFree && slot.since < oldestRUNNERtime {
 					oldestRUNNER = slot
 					oldestRUNNERtime = slot.since
@@ -509,10 +509,10 @@ func (b *Broker) Run() {
 		}
 
 		// GB: padara FREE y-tipa konteinerus, kurus vairs neviens nelieto - lai tos velak var kill/stop
-		for _, slotD := range b.dockerSlots {
+		for _, slotD := range b.targetSlots {
 			if yType(slotD.slotType) && slotD.state == BrokerSlotStateRun {
 				unused := true
-				for _, slotT := range b.tcpSlots {
+				for _, slotT := range b.sourceSlots {
 					if slotT.slotType == slotD.slotType && slotT.state == BrokerSlotStateRun {
 						unused = false
 					}
@@ -525,7 +525,7 @@ func (b *Broker) Run() {
 		}
 
 		// GB: kill/stop visus konteinerus, kuri 30min nevar piestarteties vai nostradat
-		for _, slotD := range b.dockerSlots {
+		for _, slotD := range b.targetSlots {
 			if slotD.since < (now-1800) && (slotD.state == BrokerSlotStateRun || slotD.state == BrokerSlotStateStarting) {
 				slotD.state = BrokerSlotStateFree
 				slotD.slotType = ""
