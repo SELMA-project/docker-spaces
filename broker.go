@@ -328,7 +328,7 @@ func (b *Broker) Run() {
 					if sourceSlot.state == BrokerSlotStateWait && sourceSlot.slotType == targetSlot.slotType {
 						b.freeSourceSlots <- sourceSlot
 						sourceSlot.state = BrokerSlotStateFree
-						sourceSlot.send(NewBrokerMessage(BrokerMessageError, "Image does not exist"))
+						sourceSlot.send(NewBrokerMessage(BrokerMessageError, message.PayloadString()))
 					}
 
 				}

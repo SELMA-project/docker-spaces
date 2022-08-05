@@ -180,6 +180,7 @@ func (r *DockerRunner) start(image string, internalPort int) (err error) {
 		id = _id.(string)
 	} else {
 		err = fmt.Errorf("start: invalid response from docker engine API: id field is missing")
+		response.Close()
 		return
 	}
 
@@ -189,6 +190,10 @@ func (r *DockerRunner) start(image string, internalPort int) (err error) {
 	if err != nil {
 		// TODO: auto or manual remove?
 		return
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		err = fmt.Errorf("start: docker start container returned status: %s", response.Status)
 	}
 
 	response.Close()
@@ -320,7 +325,7 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 	slot.Send(NewBrokerMessage(BrokerMessageFree, remoteAddress)) // refInfo = remoteAddress
 
 	for !r.stop {
-		log.Trace("docker-runner: run: loop")
+		// log.Trace("docker-runner: run: loop")
 
 		message := slot.Read() // TODO: block here
 		// TODO: wait or block at slot.Read(), add timeout?
@@ -340,7 +345,7 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 			err := r.start(containerInfo.image, containerInfo.port)
 			if err != nil {
 				log.Debug("docker-runner: run: start container error:", err)
-				slot.Send(NewBrokerMessage(BrokerMessageError, nil)) // parameter?
+				slot.Send(NewBrokerMessage(BrokerMessageError, err.Error()))
 				break
 			}
 
