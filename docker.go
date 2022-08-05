@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 
 	// "log"
 	"net"
@@ -390,6 +391,15 @@ func connectSSHpipe(host string, port string) (stdin io.WriteCloser, stdout io.R
 	return
 }
 
+// https://www.thorsten-hans.com/check-if-application-is-running-in-docker-container/
+// detect if running inside docker container
+func isRunningInContainer() bool {
+	if _, err := os.Stat("/.dockerenv"); err != nil {
+		return false
+	}
+	return true
+}
+
 type Docker struct {
 	endpoint   string
 	client     *http.Client
@@ -447,6 +457,9 @@ func NewDocker(endpoint string) (docker *Docker, err error) {
 		}
 		// docker.endpoint = "http://unix"
 		endpoint = "http://unix"
+		if isRunningInContainer() {
+			u.Host = "host.docker.internal"
+		}
 	}
 
 	docker = &Docker{}
