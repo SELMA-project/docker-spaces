@@ -6,6 +6,7 @@ import (
 	"io"
 
 	// "log"
+	"errors"
 	"net"
 	"time"
 )
@@ -135,7 +136,8 @@ func (p *DynamicReverseProxy) err(s string, err error) {
 	if p.erred {
 		return
 	}
-	if err != io.EOF {
+	// if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		// p.Log.Warn(s, err)
 		log.Errorf("proxy: %s: %v", s, err)
 	}
