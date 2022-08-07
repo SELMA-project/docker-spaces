@@ -96,7 +96,7 @@ func (t *ResolvedDockerTarget) WrapProxyConnection(conn io.ReadWriter) io.ReadWr
 
 	log.Debug("docker-resolver-target: wrap proxy connection")
 
-	conn = NewHTTPRequestWrapper(conn, func(request *ParsedHTTPRequest) (err error) {
+	conn = NewHTTPRewriteRequestWrapper(conn, func(request *ParsedHTTPRequest) (err error) {
 		request.Path, err = t.parseURLPath(request.Path)
 		// log.Trace("docker-resolver: wrapped proxy conn request:", string(request.Data(true, false, true)))
 		return
@@ -108,6 +108,13 @@ func (t *ResolvedDockerTarget) WrapProxyConnection(conn io.ReadWriter) io.ReadWr
 func (t *ResolvedDockerTarget) Connect() (conn io.ReadWriteCloser, err error) {
 
 	conn, err = net.Dial("unix", "/var/run/docker.sock")
+
+	conn = NewHTTPRewriteResponseWrapper(conn, func(response *ParsedHTTPResponse) (err error) {
+		// log.Trace("docker-resolver: connect: got response:", response)
+		// request.Path, err = t.parseURLPath(request.Path)
+		// log.Trace("docker-resolver: wrapped docker conn response:", string(response.Data(true, false, true)))
+		return
+	})
 
 	return
 }

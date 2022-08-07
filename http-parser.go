@@ -93,6 +93,10 @@ func ParseHTTPResponse(buff []byte) (r *ParsedHTTPResponse, err error) {
 	return
 }
 
+func (r *ParsedHTTPResponse) HeaderSize() int {
+	return r.endOfHeaders + 4 // + \r\n\r\n
+}
+
 func (r *ParsedHTTPResponse) Data(versionUpdated bool, statusUpdated bool, headersUpdated bool) []byte {
 	if !versionUpdated && !statusUpdated && !headersUpdated {
 		return r.buff
@@ -158,6 +162,51 @@ func (r *ParsedHTTPResponse) Write(out io.Writer, versionUpdated bool, statusUpd
 	if err != nil {
 		return
 	}
+
+	return
+}
+
+func (r *ParsedHTTPResponse) WriteHeader(out io.Writer, versionUpdated bool, statusUpdated bool, headersUpdated bool) (err error) {
+	if !versionUpdated && !statusUpdated && !headersUpdated {
+		_, err = out.Write(r.buff)
+		return
+	}
+
+	if statusUpdated || versionUpdated {
+		versionString := r.Version
+		if versionUpdated {
+			versionString = fmt.Sprintf("HTTP/%d.%d", r.VersionMajor, r.VersionMinor)
+		}
+
+		_, err = out.Write([]byte(versionString + " " + strconv.Itoa(r.StatusCode) + " " + r.Status + "\r\n"))
+		if err != nil {
+			return
+		}
+	} else {
+		_, err = out.Write(r.buff[:r.statusLineLength+2]) // +2 to include \r\n
+		if err != nil {
+			return
+		}
+	}
+
+	if headersUpdated {
+		r.Headers.Write(out)
+	} else {
+		_, err = out.Write(r.buff[r.statusLineLength+2 : r.endOfHeaders+2]) // +2 to include \r\n
+		if err != nil {
+			return
+		}
+	}
+
+	_, err = out.Write([]byte("\r\n"))
+	if err != nil {
+		return
+	}
+
+	// _, err = out.Write(r.buff[r.endOfHeaders+2 : len(r.buff)]) // remaining content
+	// if err != nil {
+	// 	return
+	// }
 
 	return
 }

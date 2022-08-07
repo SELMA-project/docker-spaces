@@ -44,41 +44,47 @@ func (r *HTTPProtocolTargetResolver) Resolve(buff []byte) (target ResolvedTarget
 }
 
 type HTTPRequestRewriteFunc func(*ParsedHTTPRequest) error
+type HTTPResponseRewriteFunc func(*ParsedHTTPResponse) error
 
 type HTTPReaderState int
 
 const (
-	HTTPReaderStateRequestHead HTTPReaderState = iota
+	HTTPReaderStateHead HTTPReaderState = iota
 	HTTPReaderStateBody
 	HTTPReaderStateChunkedBody
 	HTTPReaderStateUpgraded
 )
 
 func (s HTTPReaderState) String() string {
-	return [...]string{"HTTPReaderStateRequestHead", "HTTPReaderStateBody", "HTTPReaderStateChunkedBody", "HTTPReaderStateUpgraded"}[s]
+	return [...]string{"HTTPReaderStateHead", "HTTPReaderStateBody", "HTTPReaderStateChunkedBody", "HTTPReaderStateUpgraded"}[s]
 }
 
-type HTTPRequestURLRewriterReadWriteCloserWrapper struct {
-	inner         io.ReadWriter
-	rewriteFunc   HTTPRequestRewriteFunc
-	input         bytes.Buffer
-	output        bytes.Buffer
-	buff          [0xfff]byte // 4KB
-	state         HTTPReaderState
-	bodyToRead    int
-	lastBodyParse int
-	finalChunk    bool
+type HTTPRewriteHeaderWrapper struct {
+	inner               io.ReadWriter
+	rewriteRequestFunc  HTTPRequestRewriteFunc
+	rewriteResponseFunc HTTPResponseRewriteFunc
+	input               bytes.Buffer
+	output              bytes.Buffer
+	buff                [0xfff]byte // 4KB
+	state               HTTPReaderState
+	bodyToRead          int
+	lastBodyParse       int
+	finalChunk          bool
 }
 
-func NewHTTPRequestWrapper(inner io.ReadWriter, rewriteFunc HTTPRequestRewriteFunc) *HTTPRequestURLRewriterReadWriteCloserWrapper {
-	return &HTTPRequestURLRewriterReadWriteCloserWrapper{inner: inner, rewriteFunc: rewriteFunc}
+func NewHTTPRewriteRequestWrapper(inner io.ReadWriter, rewriteFunc HTTPRequestRewriteFunc) *HTTPRewriteHeaderWrapper {
+	return &HTTPRewriteHeaderWrapper{inner: inner, rewriteRequestFunc: rewriteFunc}
 }
 
-func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Unwrap() io.ReadWriteCloser {
+func NewHTTPRewriteResponseWrapper(inner io.ReadWriter, rewriteFunc HTTPResponseRewriteFunc) *HTTPRewriteHeaderWrapper {
+	return &HTTPRewriteHeaderWrapper{inner: inner, rewriteResponseFunc: rewriteFunc}
+}
+
+func (r *HTTPRewriteHeaderWrapper) Unwrap() io.ReadWriteCloser {
 	return r.inner.(io.ReadWriteCloser)
 }
 
-func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int, err error) {
+func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 
 	// TODO: handle upgraded connections
 	// if r.state == HTTPReaderStateUpgraded {
@@ -90,14 +96,14 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 
 	var in int
 
-	if r.state == HTTPReaderStateRequestHead {
+	if r.state == HTTPReaderStateHead {
 
 		// read more data into input only if input is empty or the buffer is the same from previous call (determined by input buffer size)
 		if r.input.Len() == 0 || r.lastBodyParse == r.input.Len() {
 			// read from inner into input buffer
 			in, err = r.inner.Read(r.buff[:])
 			if err != nil {
-				err = fmt.Errorf("http-request-read: error reading from source: %w", err)
+				err = fmt.Errorf("http-reader-read: error reading from source: %w", err)
 				return
 			}
 
@@ -108,69 +114,134 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 			// TODO: add written byte count check
 			_, err = r.input.Write(r.buff[:in])
 			if err != nil {
-				err = fmt.Errorf("http-request-read: error writing to internal buffer: %w", err)
+				err = fmt.Errorf("http-reader-read: error writing to internal buffer: %w", err)
 				return
 			}
 		}
 
 		// parse HTTP header in input buffer
 
-		var request *ParsedHTTPRequest
+		if r.rewriteRequestFunc != nil {
 
-		request, err = ParseHTTPRequest(r.input.Bytes())
-		if err != nil {
-			err = fmt.Errorf("http-request-reader: error parsing HTTP request: %w", err)
-			log.Trace("request:", string(r.input.Bytes()))
-			return
-		}
+			var request *ParsedHTTPRequest
 
-		if request == nil {
-			// not yet enough data
-			r.lastBodyParse = r.input.Len()
-			return
-		}
-
-		// // TODO: handle connection upgrade
-		// upgrade := request.Headers.Get("Upgrade")
-		// if len(upgrade) > 0 {
-		// }
-
-		transferEncoding := request.Headers.Get("Transfer-Encoding")
-		if transferEncoding == "chunked" {
-			r.state = HTTPReaderStateChunkedBody
-			r.bodyToRead = 0
-		} else {
-			r.state = HTTPReaderStateBody
-			contentLength := request.Headers.Get("Content-Length")
-			if len(contentLength) == 0 {
-				// err = fmt.Errorf("http-request-reader: content length is empty")
-				r.bodyToRead = 0
-			} else if r.bodyToRead, err = strconv.Atoi(contentLength); err != nil {
-				err = fmt.Errorf("http-request-reader: invalid content length %s: %w", contentLength, err)
-				return
-			}
-		}
-
-		if r.rewriteFunc != nil {
-			err = r.rewriteFunc(request)
+			request, err = ParseHTTPRequest(r.input.Bytes())
 			if err != nil {
-				err = fmt.Errorf("http-request-reader: request rewrite func error: %w", err)
+				err = fmt.Errorf("http-reader-read: error parsing HTTP request: %w", err)
+				log.Trace("request:", string(r.input.Bytes()))
 				return
 			}
-		}
 
-		// write new header to ouput buffer
-		err = request.WriteHeader(&r.output, true, true, true)
-		if err != nil {
-			err = fmt.Errorf("http-request-reader: error writing header: %w", err)
+			if request == nil {
+				// not yet enough data
+				r.lastBodyParse = r.input.Len()
+				return
+			}
+
+			// // TODO: handle connection upgrade
+			// upgrade := request.Headers.Get("Upgrade")
+			// if len(upgrade) > 0 {
+			// }
+
+			transferEncoding := request.Headers.Get("Transfer-Encoding")
+			if transferEncoding == "chunked" {
+				r.state = HTTPReaderStateChunkedBody
+				r.bodyToRead = 0
+			} else {
+				r.state = HTTPReaderStateBody
+				contentLength := request.Headers.Get("Content-Length")
+				if len(contentLength) == 0 {
+					// err = fmt.Errorf("http-reader-read: content length is empty")
+					r.bodyToRead = 0
+				} else if r.bodyToRead, err = strconv.Atoi(contentLength); err != nil {
+					err = fmt.Errorf("http-reader-read: invalid content length %s: %w", contentLength, err)
+					return
+				}
+			}
+
+			if r.rewriteRequestFunc != nil {
+				err = r.rewriteRequestFunc(request)
+				if err != nil {
+					err = fmt.Errorf("http-reader-read: request rewrite func error: %w", err)
+					return
+				}
+			}
+
+			// write new header to ouput buffer
+			err = request.WriteHeader(&r.output, true, true, true)
+			if err != nil {
+				err = fmt.Errorf("http-reader-read: error writing header: %w", err)
+				return
+			}
+
+			// advance input buffer past the old header
+			r.input.Next(request.HeaderSize()) // skip header bytes
+
+		} else if r.rewriteResponseFunc != nil {
+
+			var response *ParsedHTTPResponse
+
+			response, err = ParseHTTPResponse(r.input.Bytes())
+			if err != nil {
+				err = fmt.Errorf("http-reader-read: error parsing HTTP response: %w", err)
+				return
+			}
+
+			if response == nil {
+				// not yet enough data
+				r.lastBodyParse = r.input.Len()
+				return
+			}
+
+			// // TODO: handle connection upgrade
+			// upgrade := response.Headers.Get("Upgrade")
+			// if len(upgrade) > 0 {
+			// }
+
+			transferEncoding := response.Headers.Get("Transfer-Encoding")
+			if transferEncoding == "chunked" {
+				r.state = HTTPReaderStateChunkedBody
+				r.bodyToRead = 0
+			} else if len(response.Headers.Get("Content-Length")) == 0 {
+				r.state = HTTPReaderStateChunkedBody
+				r.bodyToRead = 0
+			} else {
+				r.state = HTTPReaderStateBody
+				contentLength := response.Headers.Get("Content-Length")
+				if len(contentLength) == 0 {
+					// err = fmt.Errorf("http-reader-read: content length is empty")
+					r.bodyToRead = 0
+				} else if r.bodyToRead, err = strconv.Atoi(contentLength); err != nil {
+					err = fmt.Errorf("http-reader-read: invalid content length %s: %w", contentLength, err)
+					return
+				}
+			}
+
+			if r.rewriteResponseFunc != nil {
+				err = r.rewriteResponseFunc(response)
+				if err != nil {
+					err = fmt.Errorf("http-reader-read: response rewrite func error: %w", err)
+					return
+				}
+			}
+
+			// write new header to ouput buffer
+			err = response.WriteHeader(&r.output, true, true, true)
+			if err != nil {
+				err = fmt.Errorf("http-reader-read: error writing header: %w", err)
+				return
+			}
+
+			// advance input buffer past the old header
+			r.input.Next(response.HeaderSize()) // skip header bytes
+
+		} else {
+			err = fmt.Errorf("http-reader-read: no request or rewrite function defined")
 			return
 		}
 
-		// advance input buffer past the old header
-		r.input.Next(request.HeaderSize()) // skip header bytes
-
-		if r.bodyToRead == 0 {
-			r.state = HTTPReaderStateRequestHead
+		if r.bodyToRead == 0 && r.state != HTTPReaderStateChunkedBody {
+			r.state = HTTPReaderStateHead
 			r.lastBodyParse = 0
 		}
 	}
@@ -199,7 +270,7 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 			}
 			r.bodyToRead -= n
 			if r.bodyToRead == 0 {
-				r.state = HTTPReaderStateRequestHead
+				r.state = HTTPReaderStateHead
 				r.lastBodyParse = 0
 			}
 			return
@@ -213,7 +284,7 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 		}
 		r.bodyToRead -= n
 		if r.bodyToRead == 0 {
-			r.state = HTTPReaderStateRequestHead
+			r.state = HTTPReaderStateHead
 			r.lastBodyParse = 0
 		}
 
@@ -235,7 +306,7 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 		if true {
 
 			if r.bodyToRead < 0 {
-				err = fmt.Errorf("http-request-read: unexpected error: body to read is below 0: %d", r.bodyToRead)
+				err = fmt.Errorf("http-reader-read: unexpected error: body to read is below 0: %d", r.bodyToRead)
 				return
 			}
 
@@ -244,7 +315,7 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 				// read from inner into input buffer
 				in, err = r.inner.Read(r.buff[:])
 				if err != nil {
-					err = fmt.Errorf("http-request-read: error reading from source: %w", err)
+					err = fmt.Errorf("http-reader-read: error reading from source: %w", err)
 					return
 				}
 
@@ -255,7 +326,7 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 				// TODO: add written byte count check
 				_, err = r.input.Write(r.buff[:in])
 				if err != nil {
-					err = fmt.Errorf("http-request-read: error writing to internal buffer: %w", err)
+					err = fmt.Errorf("http-reader-read: error writing to internal buffer: %w", err)
 					return
 				}
 			}
@@ -266,7 +337,7 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 				var size, offset int64
 				size, offset, err = parseHTTPChunkHead(b)
 				if err != nil {
-					err = fmt.Errorf("http-request-read: error parsing http chunk header: %w", err)
+					err = fmt.Errorf("http-reader-read: error parsing http chunk header: %w", err)
 					return
 				}
 
@@ -278,7 +349,7 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 							return
 						}
 						// reset to wait for next request
-						r.state = HTTPReaderStateRequestHead
+						r.state = HTTPReaderStateHead
 						r.lastBodyParse = 0
 						// r.finalChunk = false
 						return
@@ -290,7 +361,7 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 				r.bodyToRead = int(size + 2) // + \r\n
 				_, err = r.output.Write(b[:offset])
 				if err != nil {
-					err = fmt.Errorf("http-request-read: chunked body: error writing to output buffer: %w", err)
+					err = fmt.Errorf("http-reader-read: chunked body: error writing to output buffer: %w", err)
 					return
 				}
 				r.input.Next(int(offset)) // chunked head is written to output, so advance input buffer pointer
@@ -317,7 +388,7 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 				}
 				r.bodyToRead -= n
 				if r.bodyToRead == 0 && r.finalChunk {
-					r.state = HTTPReaderStateRequestHead
+					r.state = HTTPReaderStateHead
 					r.lastBodyParse = 0
 					r.finalChunk = false
 					return
@@ -337,13 +408,16 @@ func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Read(buff []byte) (n int,
 	return
 }
 
-func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Write(buff []byte) (n int, err error) {
+func (r *HTTPRewriteHeaderWrapper) Write(buff []byte) (n int, err error) {
 	return r.inner.Write(buff)
 }
 
-// func (r *HTTPRequestURLRewriterReadWriteCloserWrapper) Close() error {
-// 	return r.inner.Close()
-// }
+func (r *HTTPRewriteHeaderWrapper) Close() error {
+	if closer, ok := r.inner.(io.ReadWriteCloser); ok {
+		return closer.Close()
+	}
+	return nil
+}
 
 func parseHTTPChunkHead(buff []byte) (dataSize int64, dataOffset int64, err error) {
 
