@@ -145,7 +145,7 @@ func (p *DynamicReverseProxy) err(s string, err error) {
 	p.erred = true
 }
 
-func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]byte) []byte */, notify bool) {
+func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]byte) []byte */, notify bool, name string) {
 	// islocal := src == p.lconn
 	//
 	// var dataDirection string
@@ -167,7 +167,7 @@ func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]b
 	for {
 		n, err := src.Read(buff)
 		if err != nil {
-			p.err("pipe: read failed", err)
+			p.err(fmt.Sprintf("%s pipe: read failed", name), err)
 			return
 		}
 		b := buff[:n]
@@ -197,7 +197,7 @@ func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]b
 		//write out result
 		n, err = dst.Write(b)
 		if err != nil {
-			p.err("pipe: write failed", err)
+			p.err(fmt.Sprintf("%s pipe: write failed", name), err)
 			return
 		}
 		// if islocal {
@@ -533,7 +533,7 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(proxyConn io.ReadWri
 	}
 
 	// pipe in reverse direction in a separate goroutine
-	go p.pipe(targetConn, proxyConn /*, reverseReplacer*/, p.resolvedTarget != nil)
+	go p.pipe(targetConn, proxyConn /*, reverseReplacer*/, p.resolvedTarget != nil, "worker to proxy")
 
-	p.pipe(proxyConn, targetConn /*, nil*/, false)
+	p.pipe(proxyConn, targetConn /*, nil*/, false, "proxy to worker")
 }
