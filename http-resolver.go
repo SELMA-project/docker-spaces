@@ -249,6 +249,7 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 	// return data from output buffer
 	if r.output.Len() > 0 {
 		n, err = r.output.Read(buff)
+		log.Tracef("http-reader-read: return %d bytes from output buffer", n)
 		return
 	}
 
@@ -269,6 +270,7 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				n, err = r.input.Read(buff[:r.bodyToRead]) // so it won't try to read bytes past the start of the next request
 			}
 			r.bodyToRead -= n
+			log.Tracef("http-reader-read: return %d bytes from input buffer, %d bytes of body left to read", n, r.bodyToRead)
 			if r.bodyToRead == 0 {
 				r.state = HTTPReaderStateHead
 				r.lastBodyParse = 0
@@ -283,6 +285,7 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 			n, err = r.inner.Read(buff[:r.bodyToRead]) // so it won't try to read bytes past the start of the next  request
 		}
 		r.bodyToRead -= n
+		log.Tracef("http-reader-read: return %d bytes from wrapped source reader, %d bytes of body left to read", n, r.bodyToRead)
 		if r.bodyToRead == 0 {
 			r.state = HTTPReaderStateHead
 			r.lastBodyParse = 0
@@ -295,10 +298,11 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 		// switched from head just now, then output will contain the head
 
 		// return data from output buffer
-		if r.output.Len() > 0 {
-			n, err = r.output.Read(buff)
-			return
-		}
+		// redundant
+		// if r.output.Len() > 0 {
+		// 	n, err = r.output.Read(buff)
+		// 	return
+		// }
 
 		// parse at input buffer, TODO: output may use as an returned data aggregator
 
@@ -344,6 +348,7 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				if size == 0 {
 					// final terminating chunk
 					if int64(len(b)) >= offset+2 /* include terminating \r\n */ {
+						log.Tracef("http-reader-read: got final body chunk")
 						n, err = r.input.Read(buff[:offset+2])
 						if err != nil {
 							return
@@ -354,11 +359,15 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 						// r.finalChunk = false
 						return
 					} else {
+						log.Tracef("http-reader-read: expecting final body chunk")
 						r.finalChunk = true
 					}
+				} else {
+					log.Tracef("http-reader-read: got new body chunk of size %d bytes", int(size+2))
 				}
 
 				r.bodyToRead = int(size + 2) // + \r\n
+
 				_, err = r.output.Write(b[:offset])
 				if err != nil {
 					err = fmt.Errorf("http-reader-read: chunked body: error writing to output buffer: %w", err)
@@ -369,6 +378,7 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 
 			if r.output.Len() > 0 {
 				n, err = r.output.Read(buff)
+				log.Tracef("http-reader-read: return %d bytes from output buffer", n)
 				return
 			}
 
@@ -379,15 +389,18 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 					} else {
 						n, err = r.input.Read(buff)
 					}
+					log.Tracef("http-reader-read: return %d bytes from input buffer, %d bytes of body chunk left to read", n, r.bodyToRead-n)
 				} else {
 					if len(buff) > r.bodyToRead {
 						n, err = r.inner.Read(buff[:r.bodyToRead])
 					} else {
 						n, err = r.inner.Read(buff)
 					}
+					log.Tracef("http-reader-read: return %d bytes from wrapped source reader, %d bytes of body chunk left to read", n, r.bodyToRead-n)
 				}
 				r.bodyToRead -= n
 				if r.bodyToRead == 0 && r.finalChunk {
+					log.Tracef("http-reader-read: final body chunk arrived")
 					r.state = HTTPReaderStateHead
 					r.lastBodyParse = 0
 					r.finalChunk = false
@@ -415,6 +428,9 @@ func (r *HTTPRewriteHeaderWrapper) Write(buff []byte) (n int, err error) {
 func (r *HTTPRewriteHeaderWrapper) Close() error {
 	if closer, ok := r.inner.(io.ReadWriteCloser); ok {
 		return closer.Close()
+	} else {
+		log.Warn("http-rewrite-header-wrapper: wrapped connection does not implement Close() method")
+		return fmt.Errorf("http-rewrite-header-wrapper: wrapped connection does not implement Close() method")
 	}
 	return nil
 }
