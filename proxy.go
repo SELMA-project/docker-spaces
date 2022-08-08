@@ -512,7 +512,7 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(proxyConn io.ReadWri
 	// }
 
 	if p.CORS {
-		// targetConn = NewHTTPCORSInject(targetConn)
+		targetConn = NewHTTPCORSInject(targetConn)
 	}
 
 	if proxyConnWrapper, ok := p.resolvedTarget.(ProxyConnectionWrapper); ok {

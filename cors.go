@@ -13,9 +13,24 @@ type HTTPCORSInject struct {
 	buff          [0xfff]byte
 }
 
-func NewHTTPCORSInject(conn io.ReadWriteCloser) *HTTPCORSInject {
-	return &HTTPCORSInject{inner: conn}
+func NewHTTPCORSInject(conn io.ReadWriter) io.ReadWriter {
+	return NewHTTPRewriteResponseWrapper(conn, func(response *ParsedHTTPResponse) (err error) {
+
+		response.Headers.Add("Access-Control-Request-Headers", "Content-Type")
+		response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
+		response.Headers.Add("Access-Control-Allow-Origin", "*")
+		response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE")
+		response.Headers.Add("Access-Control-Allow-Credentials", "true")
+
+		log.Trace("http-cors-inject: parsed response headers:", response.Headers)
+
+		return
+	})
 }
+
+// func NewHTTPCORSInject(conn io.ReadWriteCloser) *HTTPCORSInject {
+// 	return &HTTPCORSInject{inner: conn}
+// }
 
 func (r *HTTPCORSInject) Read(buff []byte) (n int, err error) {
 
