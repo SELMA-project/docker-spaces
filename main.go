@@ -40,6 +40,7 @@ func main() {
 	var targetSlots int = 5
 	var sleepMS int = 2000
 	var clusterDefs stringFlags
+	var enableGPU bool = false
 
 	// <host-start-port>:<target-slot(docker-runner)-count>:<docker-host-url>
 
@@ -55,6 +56,7 @@ func main() {
 	flag.StringVar(&registryEmail, "email", registryEmail, "docker registry email")
 	flag.StringVar(&registryPassword, "password", registryPassword, "docker registry password")
 	flag.BoolVar(&enableCORS, "cors", enableCORS, "enable CORS")
+	flag.BoolVar(&enableGPU, "gpu", enableGPU, "enable GPU")
 	flag.IntVar(&startPort, "start-port", startPort, "start port of docker containers port range")
 	flag.IntVar(&sourceSlots, "source", sourceSlots, "number of source (TCP) slots")
 	flag.IntVar(&targetSlots, "target", targetSlots, "number of target (docker) slots")
@@ -146,6 +148,8 @@ func main() {
 
 	// dockerRunners := make([]*DockerRunner, 0, targetSlots)
 
+	log.Info("GPU:", enableGPU)
+
 	log.Info("creating docker runners")
 
 	for _, cluster := range clusters {
@@ -153,6 +157,7 @@ func main() {
 		log.Trace("creating docker runners for cluster:", cluster.dockerHost)
 
 		nextContainerPort := cluster.startPort
+		nextGPUDevice := 0
 
 		for count := 0; count < cluster.targetSlotCount; count++ {
 
@@ -171,8 +176,12 @@ func main() {
 				docker.SetAuth(dockerAuth)
 			}
 
+			if enableGPU {
+				nextGPUDevice++
+			}
+
 			// for remote docker runner: spawned connection as argument must be provided
-			dockerRunner := NewDockerRunner(docker, nextContainerPort)
+			dockerRunner := NewDockerRunner(docker, nextContainerPort, nextGPUDevice)
 			nextContainerPort++
 
 			// dockerRunners = append(dockerRunners, dockerRunner)

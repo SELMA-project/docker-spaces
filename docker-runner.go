@@ -14,10 +14,11 @@ type DockerRunner struct {
 	stop          bool
 	containerPort int
 	image         string
+	gpu           int
 }
 
-func NewDockerRunner(dockerHost *Docker, containerPort int) *DockerRunner {
-	return &DockerRunner{docker: dockerHost, containerPort: containerPort}
+func NewDockerRunner(dockerHost *Docker, containerPort int, gpu int) *DockerRunner {
+	return &DockerRunner{docker: dockerHost, containerPort: containerPort, gpu: gpu}
 }
 
 func (r *DockerRunner) getContainerID() (id string, err error) {
@@ -131,6 +132,31 @@ func (r *DockerRunner) start(image string, internalPort int) (err error) {
 
 	externalPort := r.containerPort
 
+	var deviceRequests []any = []any{}
+
+	if r.gpu > 0 {
+
+		log.Trace("docker-runner: starting container with GPU device:", r.gpu-1)
+
+		deviceRequest := map[string]any{
+			// "Driver": "nvidia",
+			"Driver": "",
+			// "Count":  -1,
+			"Count": 0,
+			"DeviceIDs": []any{
+				strconv.Itoa(r.gpu - 1),
+			},
+			"Capabilities": []any{
+				[]any{"gpu"},
+				// []any{"gpu", "nvidia", "compute", "utility"},
+			},
+		}
+
+		deviceRequests = append(deviceRequests, deviceRequest)
+
+		log.Tracef("device requests: %+v", deviceRequests)
+	}
+
 	// response, err = r.docker.Post("/containers/create", &url.Values{"name": []string{"api-test"}}, map[string]interface{}{
 	response, err = r.docker.Post("/containers/create", nil, nil, map[string]interface{}{
 		"Hostname":     "",
@@ -152,6 +178,16 @@ func (r *DockerRunner) start(image string, internalPort int) (err error) {
 			"PortBindings": map[string]interface{}{
 				fmt.Sprintf("%d/tcp", internalPort): []interface{}{map[string]string{"HostPort": strconv.Itoa(externalPort)}},
 			},
+			"DeviceRequests": deviceRequests,
+			// "DeviceRequests": []interface{}{
+			// 	map[string]interface{}{
+			// 		"Driver": "nvidia",
+			// 		"Count":  -1,
+			// 		"Capabilities": []interface{}{
+			// 			[]interface{}{"gpu", "nvidia", "compute", "utility"},
+			// 		},
+			// 	},
+			// },
 		},
 		"ExposedPorts": map[string]interface{}{
 			fmt.Sprintf("%d/tcp", internalPort): map[string]string{},
