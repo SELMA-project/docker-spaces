@@ -87,7 +87,11 @@ func (r *BrokerTargetResolver) parseURLPath(path string) (pathRewrite string, yT
 
 	info = &DockerContainerInfo{image, port}
 
-	pathRewrite = "/" + pathParts[2]
+	pathRewrite = "/"
+
+	if len(pathParts) > 2 {
+		pathRewrite += pathParts[2]
+	}
 
 	return
 }
