@@ -1,6 +1,9 @@
 package main
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
 
 type ReadWriterLogger struct {
 	inner io.ReadWriter
@@ -28,6 +31,12 @@ func (r *ReadWriterLogger) Write(buff []byte) (n int, err error) {
 	return
 }
 
-// func (r *ReadWriterLogger) Close() error {
-// 	return r.inner.Close()
-// }
+func (r *ReadWriterLogger) Close() error {
+	if closer, ok := r.inner.(io.ReadWriteCloser); ok {
+		return closer.Close()
+	} else {
+		log.Warn("read-writer-logger: wrapped connection does not implement Close() method")
+		return fmt.Errorf("read-writer-logger: wrapped connection does not implement Close() method")
+	}
+	return nil
+}
