@@ -109,6 +109,8 @@ func (t *ResolvedDockerTarget) Connect() (conn io.ReadWriteCloser, err error) {
 
 	conn, err = net.Dial("unix", "/var/run/docker.sock")
 
+	// conn = NewReadWriterLogger(conn, "DOCKER")
+
 	conn = NewHTTPRewriteResponseWrapper(conn, func(response *ParsedHTTPResponse) (err error) {
 		// log.Trace("docker-resolver: connect: got response:", response)
 		// request.Path, err = t.parseURLPath(request.Path)
