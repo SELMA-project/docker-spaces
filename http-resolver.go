@@ -138,6 +138,8 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				return
 			}
 
+			r.lastBodyParse = 0
+
 			// // TODO: handle connection upgrade
 			// upgrade := request.Headers.Get("Upgrade")
 			// if len(upgrade) > 0 {
@@ -193,6 +195,8 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				return
 			}
 
+			r.lastBodyParse = 0
+
 			// // TODO: handle connection upgrade
 			// upgrade := response.Headers.Get("Upgrade")
 			// if len(upgrade) > 0 {
@@ -201,6 +205,9 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 			transferEncoding := response.Headers.Get("Transfer-Encoding")
 			if transferEncoding == "chunked" {
 				r.state = HTTPReaderStateChunkedBody
+				r.bodyToRead = 0
+			} else if response.StatusCode == 204 {
+				r.state = HTTPReaderStateBody
 				r.bodyToRead = 0
 			} else if len(response.Headers.Get("Content-Length")) == 0 {
 				r.state = HTTPReaderStateChunkedBody
@@ -242,7 +249,6 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 
 		if r.bodyToRead == 0 && r.state != HTTPReaderStateChunkedBody {
 			r.state = HTTPReaderStateHead
-			r.lastBodyParse = 0
 		}
 	}
 
@@ -273,7 +279,6 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 			log.Tracef("http-reader-read: return %d bytes from input buffer, %d bytes of body left to read", n, r.bodyToRead)
 			if r.bodyToRead == 0 {
 				r.state = HTTPReaderStateHead
-				r.lastBodyParse = 0
 			}
 			return
 		}
@@ -288,7 +293,6 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 		log.Tracef("http-reader-read: return %d bytes from wrapped source reader, %d bytes of body left to read", n, r.bodyToRead)
 		if r.bodyToRead == 0 {
 			r.state = HTTPReaderStateHead
-			r.lastBodyParse = 0
 		}
 
 		return
@@ -314,7 +318,7 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				return
 			}
 
-			if r.bodyToRead == 0 {
+			if r.bodyToRead == 0 && (r.input.Len() == 0 || r.lastBodyParse == r.input.Len()) {
 				// we should be at the beginning of a new chunk
 				// read from inner into input buffer
 				in, err = r.inner.Read(r.buff[:])
@@ -341,9 +345,14 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				var size, offset int64
 				size, offset, err = parseHTTPChunkHead(b)
 				if err != nil {
-					err = fmt.Errorf("http-reader-read: error parsing http chunk header: %w", err)
+					err = fmt.Errorf("http-reader-read: error parsing HTTP chunk header: %w", err)
 					return
 				}
+				if offset == 0 {
+					r.lastBodyParse = r.input.Len()
+					return
+				}
+				r.lastBodyParse = 0
 
 				if size == 0 {
 					// final terminating chunk
@@ -355,7 +364,6 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 						}
 						// reset to wait for next request
 						r.state = HTTPReaderStateHead
-						r.lastBodyParse = 0
 						// r.finalChunk = false
 						return
 					} else {
@@ -402,9 +410,7 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				if r.bodyToRead == 0 && r.finalChunk {
 					log.Tracef("http-reader-read: final body chunk arrived")
 					r.state = HTTPReaderStateHead
-					r.lastBodyParse = 0
 					r.finalChunk = false
-					return
 				}
 				return
 			}
@@ -438,13 +444,13 @@ func (r *HTTPRewriteHeaderWrapper) Close() error {
 func parseHTTPChunkHead(buff []byte) (dataSize int64, dataOffset int64, err error) {
 
 	if len(buff) < 3 {
-		err = fmt.Errorf("parse-http-chunk-head: not enough data")
+		// err = fmt.Errorf("parse-http-chunk-head: not enough data")
 		return
 	}
 
 	lineLength := bytes.Index(buff, []byte("\r\n"))
 	if lineLength == -1 {
-		err = fmt.Errorf("parse-http-chunk-head: invalid chunk head", err)
+		// err = fmt.Errorf("parse-http-chunk-head: invalid chunk head", err)
 		return
 	}
 	dataSize, err = strconv.ParseInt(string(buff[:lineLength]), 16, 64)
