@@ -170,6 +170,10 @@ func (p *DynamicReverseProxy) pipe(src, dst io.ReadWriter /* , replacer func([]b
 			p.err(fmt.Sprintf("%s pipe: read failed", name), err)
 			return
 		}
+		if n == 0 {
+			// TODO: try again right away?
+			continue
+		}
 		b := buff[:n]
 
 		if notify && p.resolvedTarget != nil {
