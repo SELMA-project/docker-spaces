@@ -86,11 +86,19 @@ func (r *HTTPRewriteHeaderWrapper) Unwrap() io.ReadWriteCloser {
 
 func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 
-	// TODO: handle upgraded connections
-	// if r.state == HTTPReaderStateUpgraded {
-	// 	n, err = r.inner.Read(buff)
-	// 	return
-	// }
+	// handle upgraded connections
+	if r.state == HTTPReaderStateUpgraded {
+		if r.output.Len() > 0 {
+			n, err = r.output.Read(buff)
+			return
+		}
+		if r.input.Len() > 0 {
+			n, err = r.input.Read(buff)
+			return
+		}
+		n, err = r.inner.Read(buff)
+		return
+	}
 
 	// NOTE: inner.Read() can return 0 bytes read
 
@@ -241,6 +249,19 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 
 			// advance input buffer past the old header
 			r.input.Next(response.HeaderSize()) // skip header bytes
+
+			if response.StatusCode == 101 {
+				// upgraded connection
+				r.state = HTTPReaderStateUpgraded
+				if r.input.Len() > 0 {
+					r.input.WriteTo(&r.output)
+				}
+				if r.output.Len() > 0 {
+					n, err = r.output.Read(buff)
+				}
+				log.Tracef("http-reader-read: connection upgraded")
+				return
+			}
 
 		} else {
 			err = fmt.Errorf("http-reader-read: no request or rewrite function defined")
