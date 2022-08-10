@@ -347,7 +347,7 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(proxyConn io.ReadWri
 	// var reverseReplacer ReplacerFunc
 	// var reverseReplacer func([]byte) []byte
 
-	// proxyConn = NewReadWriterLogger(proxyConn, "PROXY connection")
+	// proxyConn = NewReadWriterLogger(proxyConn, "PROXY")
 
 	var buff bytes.Buffer
 
@@ -494,7 +494,7 @@ func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(proxyConn io.ReadWri
 		targetConn = conn
 	}
 
-	// targetConn = NewReadWriterLogger(targetConn, "TARGET connection")
+	// targetConn = NewReadWriterLogger(targetConn, "TARGET")
 
 	/*
 		headData := p.resolvedTarget.HeadData()
