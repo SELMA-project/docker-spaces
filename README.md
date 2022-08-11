@@ -23,6 +23,8 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 * [x] Scaling on multiple hosts. Implemented 02/08/2022, example:  `./docker-spaces.linux.x86_64 -p 1100 -source 500 -cluster 19100:50:http://111.111.111.111:7878/docker:local -cluster 12100:5:unix:///var/run/docker.sock`
 
 * [x] Run docker-spaces inside Docker container: `docker run -p 44222:8888 -v /var/run/docker.sock:/var/run/docker.sock  --rm selmaproject/uc0:spaces16 --user USER --password PASSWORD`
+
+* [x] GPU support added. When running with the `--gpu true` flag, all running containers will be allocated a separate GPU. This means that `-target int` flag must match the number of GPUs available on each host in the cluster: `docker run -p 44222:8888 -v /var/run/docker.sock:/var/run/docker.sock  --rm selmaproject/uc0:spaces17 --user USER --password PASSWORD -gpu -target 2` 
       
 * [ ] SQLite DB for accounts (2022spaces), state, config, docker-compose
 
