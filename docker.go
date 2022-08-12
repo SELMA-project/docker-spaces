@@ -458,7 +458,8 @@ func NewDocker(endpoint string) (docker *Docker, err error) {
 		// docker.endpoint = "http://unix"
 		endpoint = "http://unix"
 		if isRunningInContainer() {
-			u.Host = "host.docker.internal"
+			// u.Host = "host.docker.internal"	// currently does not work inside Linux, TODO: https://stackoverflow.com/a/62431165
+			u.Host = "172.17.0.1"
 		}
 	}
 
