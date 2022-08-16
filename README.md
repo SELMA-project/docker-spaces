@@ -48,6 +48,6 @@ to `~/.bashrc` or `~/.zshenv`.
 
 * x-type jobs are queued and executed one-at-the-time on the container; multiple containers are automatically started to handle a heavy queue.
 * y-type jobs are not queued and are immediately connected to the single shared container, which is automatically started on the first request.
-* host-type jobs are not queued and are immediately connected to the specified host:port (container must be started/stopped manually, e.g. with `DOCKER_HOST=tcp://111.111.111.111:7878/docker:local/ docker-compose up -d`; this is useful for containers mounting volumes from the host).
+* host-type jobs are not queued and are immediately connected to the specified host:port. Container must be started/stopped manually, e.g. with `DOCKER_HOST=tcp://111.111.111.111:7878/docker:local/ docker-compose up -d` Host-type jobs are useful for containers mounting volumes from the host; they can also be debugged with standard docker CLI: `DOCKER_HOST=tcp://111.111.111.111:7878/docker:local/ docker ps`
 
 
