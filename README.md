@@ -7,7 +7,7 @@ Run
 ```
 
 where DOCKER-ENGINE-URL is in any form of
-- unix:///var/run/docker.sock. (default)
+- unix:///var/run/docker.sock (default)
 - ssh://user@remote-host
 - http://remote-host
 
