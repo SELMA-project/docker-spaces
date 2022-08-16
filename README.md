@@ -20,7 +20,7 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 
 ### Features
 
-* [x] Scaling on multiple hosts. Implemented 02/08/2022, example:  `./docker-spaces.linux.x86_64 -p 1100 -source 500 -cluster 19100:50:http://111.111.111.111:7878/docker:local -cluster 12100:5:unix:///var/run/docker.sock`
+* [x] Scaling on multiple hosts in the cluster, example:  `./docker-spaces.linux.x86_64 -p 1100 -source 500 -cluster 19100:50:http://111.111.111.111:7878/docker:local -cluster 12100:5:unix:///var/run/docker.sock`
 
 * [x] Run docker-spaces inside Docker container: `docker run -p 44222:8888 -v /var/run/docker.sock:/var/run/docker.sock  --rm selmaproject/uc0:spaces18 --user USER --password PASSWORD`
 
