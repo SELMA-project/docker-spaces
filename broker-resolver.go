@@ -46,6 +46,7 @@ type BrokerTargetResolver struct {
 type DockerContainerInfo struct {
 	image string
 	port  int
+	envs  map[string]string
 }
 
 func (r *BrokerTargetResolver) parseURLPath(path string) (pathRewrite string, yType bool, info *DockerContainerInfo, err error) {
@@ -69,7 +70,7 @@ func (r *BrokerTargetResolver) parseURLPath(path string) (pathRewrite string, yT
 
 	// assert pathParts[0] == "" // not absolute path
 
-	ps := strings.Split(pathParts[1], ":")
+	ps := strings.SplitN(pathParts[1], ":", 6)
 
 	// /x:registry:repo:tag:port/...
 	if len(ps) < 5 {
@@ -83,9 +84,19 @@ func (r *BrokerTargetResolver) parseURLPath(path string) (pathRewrite string, yT
 		return
 	}
 
+	envs := map[string]string{}
+
+	if len(ps) == 6 {
+		envDefs := strings.Split(ps[5], ";")
+		for _, envDef := range envDefs {
+			kv := strings.SplitN(envDef, "=", 2)
+			envs[kv[0]] = kv[1]
+		}
+	}
+
 	image := fmt.Sprintf("%s/%s:%s", ps[1], ps[2], ps[3])
 
-	info = &DockerContainerInfo{image, port}
+	info = &DockerContainerInfo{image, port, envs}
 
 	pathRewrite = "/"
 

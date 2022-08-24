@@ -113,7 +113,7 @@ func (r *DockerRunner) kill() (err error) {
 	return
 }
 
-func (r *DockerRunner) start(image string, internalPort int) (err error) {
+func (r *DockerRunner) start(image string, internalPort int, envs map[string]string) (err error) {
 
 	// check if some container is using our external port, if so - kill it
 
@@ -178,6 +178,12 @@ func (r *DockerRunner) start(image string, internalPort int) (err error) {
 		log.Tracef("device requests: %+v", deviceRequests)
 	}
 
+	envdefs := []string{}
+
+	for k, v := range envs {
+		envdefs = append(envdefs, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	// response, err = r.docker.Post("/containers/create", &url.Values{"name": []string{"api-test"}}, map[string]interface{}{
 	response, err = r.docker.Post("/containers/create", nil, nil, map[string]interface{}{
 		"Hostname":     "",
@@ -189,6 +195,7 @@ func (r *DockerRunner) start(image string, internalPort int) (err error) {
 		"Tty":          false,
 		"OpenStdin":    false,
 		"StdinOnce":    false,
+		"Env":          envdefs,
 		// "Env": []string{
 		// 	"MYSQL_ALLOW_EMPTY_PASSWORD=yes",
 		// 	"MYSQL_ROOT_PASSWORD=123123",
@@ -243,11 +250,15 @@ func (r *DockerRunner) start(image string, internalPort int) (err error) {
 
 	response.Close()
 
+	log.Trace("docker-runner: start: starting container")
+
 	response, err = r.docker.Post("/containers/"+id+"/start", nil, nil, nil)
 	if err != nil {
 		// TODO: auto or manual remove?
 		return
 	}
+
+	log.Trace("docker-runner: start: start container response:", response)
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		err = fmt.Errorf("start: docker start container returned status: %s", response.Status)
@@ -399,7 +410,7 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 
 			log.Info("docker-runner: run: starting container")
 
-			err := r.start(containerInfo.image, containerInfo.port)
+			err := r.start(containerInfo.image, containerInfo.port, containerInfo.envs)
 			if err != nil {
 				log.Debug("docker-runner: run: start container error:", err)
 				slot.Send(NewBrokerMessage(BrokerMessageError, err.Error()))
