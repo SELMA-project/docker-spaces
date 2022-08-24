@@ -162,10 +162,11 @@ type Broker struct {
 	SourceName  string
 	TargetName  string
 
-	LoopSleep int // in milliseconds
+	LoopSleep      int // in milliseconds
+	ReleaseTimeout int // in seconds
 }
 
-func NewBroker(sourceSlotCount, targetSlotCount, sleepMS int) *Broker {
+func NewBroker(sourceSlotCount, targetSlotCount, sleepMS, releaseTimeout int) *Broker {
 	freeSourceSlots := make(chan *BrokerSlot, sourceSlotCount)
 	freeTargetSlots := make(chan *BrokerSlot, targetSlotCount)
 	sourceSlots := make([]*BrokerSlot, sourceSlotCount)
@@ -184,7 +185,11 @@ func NewBroker(sourceSlotCount, targetSlotCount, sleepMS int) *Broker {
 	if sleepMS == 0 {
 		sleepMS = 1
 	}
-	return &Broker{freeSourceSlots: freeSourceSlots, freeTargetSlots: freeTargetSlots, sourceSlots: sourceSlots, targetSlots: targetSlots, SourceName: "Source", TargetName: "Target", LoopSleep: sleepMS}
+	if releaseTimeout == 0 {
+		releaseTimeout = 1800
+	}
+	return &Broker{freeSourceSlots: freeSourceSlots, freeTargetSlots: freeTargetSlots, sourceSlots: sourceSlots, targetSlots: targetSlots, SourceName: "Source", TargetName: "Target",
+		LoopSleep: sleepMS, ReleaseTimeout: releaseTimeout}
 }
 
 // TCP side API
@@ -526,7 +531,8 @@ func (b *Broker) Run() {
 
 		// GB: kill/stop visus konteinerus, kuri 30min nevar piestarteties vai nostradat
 		for _, slotD := range b.targetSlots {
-			if slotD.since < (now-1800) && (slotD.state == BrokerSlotStateRun || slotD.state == BrokerSlotStateStarting) {
+			if slotD.since < (now-int64(b.ReleaseTimeout)) && (slotD.state == BrokerSlotStateRun /* || slotD.state == BrokerSlotStateStarting */) {
+				log.Debug("broker: releasing target slot")
 				slotD.state = BrokerSlotStateFree
 				slotD.slotType = ""
 				slotD.since = 0

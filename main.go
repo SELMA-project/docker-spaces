@@ -41,6 +41,8 @@ func main() {
 	var sleepMS int = 2000
 	var clusterDefs stringFlags
 	var enableGPU bool = false
+	var releaseTimeout int = 1800
+	var stopTimeout int = 0
 
 	// <host-start-port>:<target-slot(docker-runner)-count>:<docker-host-url>
 
@@ -61,6 +63,8 @@ func main() {
 	flag.IntVar(&sourceSlots, "source", sourceSlots, "number of source (TCP) slots")
 	flag.IntVar(&targetSlots, "target", targetSlots, "number of target (docker) slots")
 	flag.IntVar(&sleepMS, "loop-sleep", sleepMS, "broker loop sleep in milliseconds")
+	flag.IntVar(&releaseTimeout, "release", releaseTimeout, "container release timeout in seconds")
+	flag.IntVar(&stopTimeout, "stop", stopTimeout, "container stop timeout before kill in seconds")
 	flag.Var(&clusterDefs, "cluster", "cluster configuration in following format: <host-start-port>:<target-slot(docker-runner)-count>:<docker-host-url>")
 
 	flag.Parse()
@@ -139,7 +143,7 @@ func main() {
 		targetSlots = totalTargetSlotCount
 	}
 
-	broker := NewBroker(sourceSlots, targetSlots, sleepMS)
+	broker := NewBroker(sourceSlots, targetSlots, sleepMS, releaseTimeout)
 
 	broker.SourceName = "TCP"
 	broker.TargetName = "Docker"
@@ -181,7 +185,7 @@ func main() {
 			}
 
 			// for remote docker runner: spawned connection as argument must be provided
-			dockerRunner := NewDockerRunner(docker, nextContainerPort, nextGPUDevice)
+			dockerRunner := NewDockerRunner(docker, nextContainerPort, nextGPUDevice, stopTimeout, releaseTimeout)
 			nextContainerPort++
 
 			// dockerRunners = append(dockerRunners, dockerRunner)

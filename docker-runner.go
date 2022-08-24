@@ -15,10 +15,12 @@ type DockerRunner struct {
 	containerPort int
 	image         string
 	gpu           int
+	stopTimeout   int
+	startTimeout  int
 }
 
-func NewDockerRunner(dockerHost *Docker, containerPort int, gpu int) *DockerRunner {
-	return &DockerRunner{docker: dockerHost, containerPort: containerPort, gpu: gpu}
+func NewDockerRunner(dockerHost *Docker, containerPort, gpu, stopTimeout, startTimeout int) *DockerRunner {
+	return &DockerRunner{docker: dockerHost, containerPort: containerPort, gpu: gpu, stopTimeout: stopTimeout, startTimeout: startTimeout}
 }
 
 func (r *DockerRunner) getContainerID() (id string, err error) {
@@ -77,11 +79,30 @@ func (r *DockerRunner) kill() (err error) {
 		return
 	}
 
+	if r.stopTimeout > 0 {
+		log.Info("docker-runner: kill: stopping container", id)
+
+		response, err := r.docker.Post("/containers/"+id+"/stop", &url.Values{"t": []string{strconv.Itoa(r.stopTimeout)}}, nil, nil)
+		if err != nil {
+			log.Error("docker-runner: kill: stop got error:", err)
+			err = fmt.Errorf("kill: error stopping container with id = %s: %w", id, err)
+			return err
+		}
+		defer response.Close()
+
+		if response.StatusCode == 204 || response.StatusCode == 304 || response.StatusCode == 404 {
+			return nil
+		} else {
+			log.Error("docker-runner: kill: stop got response:", response)
+		}
+		// TODO: error handling: 204 OK, 304 already stopped, 404 no container, 500 server error
+	}
+
 	log.Info("docker-runner: kill: killing container", id)
 
 	response, err := r.docker.Post("/containers/"+id+"/kill", nil, nil, nil)
 	if err != nil {
-		log.Error("docker-runner: kill: got error:", err)
+		log.Error("docker-runner: kill: kill got error:", err)
 		err = fmt.Errorf("kill: error killing container with id = %s: %w", id, err)
 		return
 	}
@@ -387,7 +408,12 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 
 			// wait for responding container state
 			// r.wait()
-			waitForConnection(remoteAddress, 1*time.Second, 5*time.Minute, 1*time.Second)
+			err = waitForConnection(remoteAddress, 1*time.Second, time.Duration(r.startTimeout)*time.Second, 1*time.Second)
+			if err != nil {
+				log.Debug("docker-runner: run: wait for container error:", err)
+				slot.Send(NewBrokerMessage(BrokerMessageError, err.Error()))
+				break
+			}
 
 			// success
 			slot.Send(NewBrokerMessage(BrokerMessageStarted, nil)) // parameter?
