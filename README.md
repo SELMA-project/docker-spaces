@@ -25,6 +25,8 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 * [x] Run docker-spaces inside Docker container: `docker run -p 44222:8888 -v /var/run/docker.sock:/var/run/docker.sock  --rm selmaproject/uc0:spaces18 --user USER --password PASSWORD`
 
 * [x] GPU support added. When running with the `--gpu true` flag, all running containers will be allocated a separate GPU. This means that `-target int` flag must match the number of GPUs available on each host in the cluster: `./docker-spaces.linux.x86_64 -p 1100 --user USER --password PASSWORD -gpu -target 2` 
+
+* [x] Rabbit MQ worker dynamic scaling support added. Although it works with the default settings, a new parameter `--stop 60` is introduced to specify the delay in seconds between SIGTERM and SIGKILL signals sent to the redundant worker containers when docker-spaces scheduler decides to stop them. Another new parameter `--release 1800` specifies in seconds the minimum duration a new worker container instance will be kept running (if docker-spaces has free resources, worker will be allowed to run longer)
       
 * [ ] SQLite DB for accounts (2022spaces), state, config, docker-compose
 
@@ -49,5 +51,6 @@ to `~/.bashrc` or `~/.zshenv`.
 * x-type jobs are queued and executed one-at-the-time on the container; multiple containers are automatically started to handle a heavy queue.
 * y-type jobs are not queued and are immediately connected to the single shared container, which is automatically started on the first request.
 * host-type jobs are not queued and are immediately connected to the specified host:port [http://localhost:8888/host:centola.pinitree.com:80/](http://localhost:8888/host:centola.pinitree.com:80/). Container must be started/stopped manually, e.g. with `DOCKER_HOST=tcp://111.111.111.111:7878/docker:local/ docker-compose up -d` Host-type jobs are useful for containers mounting volumes from the host; they can also be debugged with standard docker CLI: `DOCKER_HOST=tcp://111.111.111.111:7878/docker:local/ docker ps`
+* RabbitMQ worker dynamic scaling is supported via extended x-type job syntax
 
 
