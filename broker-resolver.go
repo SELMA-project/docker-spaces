@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+
 	// "log"
 	"net/url"
 	"strconv"
@@ -39,6 +41,15 @@ func (t *BrokerTarget) Closed() {
 	return
 }
 
+func (r *BrokerTarget) WrapProxyConnection(conn io.ReadWriter) io.ReadWriter {
+
+	return NewHTTPRewriteRequestWrapper(conn, func(request *ParsedHTTPRequest) (err error) {
+		// log.Trace("broker-resolver: wrapped proxy conn request:", string(request.Data(true, false, true)))
+		request.Path, _, _, err = brokerTargetResolverParseURLPath(request.Path)
+		return
+	})
+}
+
 type BrokerTargetResolver struct {
 	broker *Broker
 }
@@ -49,7 +60,7 @@ type DockerContainerInfo struct {
 	envs  map[string]string
 }
 
-func (r *BrokerTargetResolver) parseURLPath(path string) (pathRewrite string, yType bool, info *DockerContainerInfo, err error) {
+func brokerTargetResolverParseURLPath(path string) (pathRewrite string, yType bool, info *DockerContainerInfo, err error) {
 
 	// example:
 	// http://194.8.1.235:8888/x-selmaproject-tts-777-5002/
@@ -134,7 +145,7 @@ func (r *BrokerTargetResolver) ResolveHTTPRequest(req *ParsedHTTPRequest) (targe
 
 	yType := false
 
-	req.Path, yType, containerInfo, err = r.parseURLPath(req.Path)
+	req.Path, yType, containerInfo, err = brokerTargetResolverParseURLPath(req.Path)
 	if err != nil {
 		err = fmt.Errorf("broker-resolver: invalid dynamic run path: %w", err)
 		return
@@ -152,7 +163,7 @@ func (r *BrokerTargetResolver) ResolveHTTPRequest(req *ParsedHTTPRequest) (targe
 		}
 
 		if ref != nil && (len(ref.Host) == 0 || ref.Host == req.Headers.Get("Host")) {
-			_, yType, containerInfo, err = r.parseURLPath(ref.Path)
+			_, yType, containerInfo, err = brokerTargetResolverParseURLPath(ref.Path)
 			if err != nil {
 				err = fmt.Errorf("broker-resolver: invalid dynamic run path: %w", err)
 				return
