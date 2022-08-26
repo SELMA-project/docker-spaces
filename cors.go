@@ -16,10 +16,15 @@ type HTTPCORSInject struct {
 func NewHTTPCORSInject(conn io.ReadWriter) io.ReadWriter {
 	return NewHTTPRewriteResponseWrapper(conn, func(response *ParsedHTTPResponse) (err error) {
 
+		if response.StatusCode == 405 {
+			response.StatusCode = 200
+			response.Status = "OK"
+		}
+
 		response.Headers.Add("Access-Control-Request-Headers", "Content-Type")
 		response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
 		response.Headers.Add("Access-Control-Allow-Origin", "*")
-		response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE")
+		response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		response.Headers.Add("Access-Control-Allow-Credentials", "true")
 
 		log.Trace("http-cors-inject: parsed response headers:", response.Headers)
