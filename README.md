@@ -27,12 +27,13 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 * [x] GPU support added. When running with the `--gpu true` flag, all running containers will be allocated a separate GPU. This means that `-target int` flag must match the number of GPUs available on each host in the cluster: `./docker-spaces.linux.x86_64 -p 1100 --user USER --password PASSWORD -gpu -target 2` 
 
 * [x] Rabbit MQ worker dynamic scaling support added. A new parameter `--stop 60` is introduced to specify the delay in seconds between SIGTERM and SIGKILL signals sent to the redundant worker containers when docker-spaces scheduler decides to stop them. Another new parameter `--release 1800` specifies in seconds the minimum duration a new worker container instance will be kept running (if docker-spaces has free resources, worker will be allowed to run longer; if docker-spaces is out of resources, a request to create a new worker container will be ignored)
+
+* [x] HTTPS CORS support for serverless NLP pipeline calls directly from the Web frontend JavaScript, WASM (e.g. JupyterLight):
+`./docker-spaces.linux.x86_64 -p 1100 -tls -cert cert.pem -key privkey.pem --user USER --password PASSWORD`
       
 * [ ] SQLite DB for accounts (2022spaces), state, config, docker-compose
 
-### Optional (alternatively, can be implemented via NGINX)
 
-* [ ] HTTPS CORS for serverless NLP pipeline calls directly from the Web frontend JavaScript, WASM (e.g. JupyterLight)
 
 ### Considerations
 
