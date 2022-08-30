@@ -21,11 +21,11 @@ func NewHTTPCORSInject(conn io.ReadWriter) io.ReadWriter {
 			response.Status = "OK"
 		}
 
-		response.Headers.Add("Access-Control-Request-Headers", "Content-Type")
-		response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
-		response.Headers.Add("Access-Control-Allow-Origin", "*")
-		response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		response.Headers.Add("Access-Control-Allow-Credentials", "true")
+		response.Headers.Set("Access-Control-Request-Headers", "Content-Type")
+		response.Headers.Set("Access-Control-Allow-Headers", "Content-Type")
+		response.Headers.Set("Access-Control-Allow-Origin", "*")
+		response.Headers.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		response.Headers.Set("Access-Control-Allow-Credentials", "true")
 
 		log.Trace("http-cors-inject: parsed response headers:", response.Headers)
 
