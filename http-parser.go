@@ -214,6 +214,7 @@ func (r *ParsedHTTPResponse) WriteHeader(out io.Writer, versionUpdated bool, sta
 type ParsedHTTPRequest struct {
 	Method       string
 	Path         string
+	Query        string
 	Version      string
 	VersionMajor int
 	VersionMinor int
@@ -246,7 +247,12 @@ func ParseHTTPRequest(buff []byte) (r *ParsedHTTPRequest, err error) {
 	}
 
 	method := parts[0]
-	path := parts[1]
+	pathquery := strings.SplitN(parts[1], "?", 2)
+	path := pathquery[0]
+	query := ""
+	if len(pathquery) > 1 {
+		query = "?" + pathquery[1]
+	}
 	version := parts[2]
 
 	major, minor, httpOK := http.ParseHTTPVersion(version)
@@ -266,7 +272,7 @@ func ParseHTTPRequest(buff []byte) (r *ParsedHTTPRequest, err error) {
 		return
 	}
 
-	r = &ParsedHTTPRequest{Method: method, Path: path, Version: version, VersionMajor: major, VersionMinor: minor, Headers: headers,
+	r = &ParsedHTTPRequest{Method: method, Path: path, Query: query, Version: version, VersionMajor: major, VersionMinor: minor, Headers: headers,
 		buff: buff, requestLineLength: requestLineLength, endOfHeaders: endOfHeaders}
 
 	return
@@ -289,7 +295,7 @@ func (r *ParsedHTTPRequest) Data(pathUpdated bool, versionUpdated bool, headersU
 			versionString = fmt.Sprintf("HTTP/%d.%d", r.VersionMajor, r.VersionMinor)
 		}
 
-		out.Write([]byte(r.Method + " " + r.Path + " " + versionString + "\r\n"))
+		out.Write([]byte(r.Method + " " + r.Path + r.Query + " " + versionString + "\r\n"))
 	} else {
 		out.Write(r.buff[:r.requestLineLength+2]) // +2 to include \r\n
 	}
@@ -317,7 +323,7 @@ func (r *ParsedHTTPRequest) Write(out io.Writer, pathUpdated bool, versionUpdate
 			versionString = fmt.Sprintf("HTTP/%d.%d", r.VersionMajor, r.VersionMinor)
 		}
 
-		_, err = out.Write([]byte(r.Method + " " + r.Path + " " + versionString + "\r\n"))
+		_, err = out.Write([]byte(r.Method + " " + r.Path + r.Query + " " + versionString + "\r\n"))
 		if err != nil {
 			return
 		}
@@ -357,7 +363,7 @@ func (r *ParsedHTTPRequest) WriteHeader(out io.Writer, pathUpdated bool, version
 			versionString = fmt.Sprintf("HTTP/%d.%d", r.VersionMajor, r.VersionMinor)
 		}
 
-		_, err = out.Write([]byte(r.Method + " " + r.Path + " " + versionString + "\r\n"))
+		_, err = out.Write([]byte(r.Method + " " + r.Path + r.Query + " " + versionString + "\r\n"))
 		if err != nil {
 			return
 		}
