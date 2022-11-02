@@ -1,0 +1,116 @@
+<!doctype html5>
+<html>
+<head>
+  <title>Frontend Pipeline and CORS Test</title>
+</head>
+<body>
+
+  <h3>
+    <a href="https://github.com/SELMA-project/docker-spaces" target="_blank">docker-spaces</a> Frontend Pipeline and CORS Test
+  </h3>
+
+  <div id="content">
+  </div>
+
+  <br />
+  <br />
+
+  <div style="width: 50%; position: relative">
+    <input id="text" type="text" value="" style="width: 90%" />
+    <button id="run">Run</button>
+  </div>
+
+  <script>
+
+    let host = ''
+
+    // host = 'http://localhost:9999'
+
+    function write(text, multiline) {
+      const div = document.createElement('div')
+
+      if(multiline) {
+        const pre = document.createElement('pre')
+        const code = document.createElement('code')
+        code.appendChild(document.createTextNode(text))
+        pre.appendChild(code)
+        div.appendChild(pre)
+      } else {
+        div.appendChild(document.createTextNode(text))
+      }
+
+      document.querySelector('#content').appendChild(div);
+
+      window.scrollTo(0, document.body.scrollHeight);
+    }
+
+    async function run() {
+
+      let text = document.querySelector('#text').value
+
+      write('')
+      write('')
+      write(`sending text "${text}" to translation engine...`)
+
+      let response, data;
+
+      response = await fetch(host + '/y:selmaproject:uc0:transl-100:8000/translate',
+        { method: 'POST', mode: 'cors', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: [ text ],
+            target_lang: "pt",
+            source_lang: "en",
+            max_length: 1000,
+            perform_sentence_splitting: true
+          }),
+      })
+
+      console.log('got translator response:', response)
+      data = await response.json()
+      console.log('got translator data:', data)
+      write('got translator response:')
+      write(JSON.stringify(data, null, 2), true)
+
+      let translation = data.text[0].translation
+
+      write('')
+      write(`sending translation "${translation}" to Text-To-Speech engine...`)
+
+      response = await fetch(host + '/x:selmaproject:tts:777:5002/api/tts?text=' + escape(translation) + '&speaker_id=leila%20endruweit',
+        { method: 'GET', mode: 'cors', headers: { 'Accept': '*/*', /* 'Content-Type': 'application/json' */ },  })
+
+      console.log('got TTS response:', response)
+      let blob = await response.blob()
+      console.log('got TTS blob:', blob)
+      write('got Text-To-Speech response')
+
+      let audio = document.createElement('audio')
+      audio.setAttribute('controls', '')
+
+      const div = document.createElement('div')
+      div.appendChild(audio)
+      document.querySelector('#content').appendChild(div)
+
+      audio.src = URL.createObjectURL(blob)
+
+      write('')
+      write('')
+    }
+
+    let text = document.querySelector('#text')
+
+    text.value = 'Nasa successfully flies small helicopter on Mars. The space agency is promising more adventurous flights in the days ahead.'
+
+    text.addEventListener('keypress', e => {
+      if(e.code == 'Enter') {
+        run();
+      }
+    });
+
+    document.querySelector('#run').addEventListener('click', () => {
+      run();
+    });
+
+  </script>
+</body>
+</html>
