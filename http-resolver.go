@@ -70,6 +70,7 @@ type HTTPRewriteHeaderWrapper struct {
 	bodyToRead          int
 	lastBodyParse       int
 	finalChunk          bool
+	headerParsed        bool
 }
 
 func NewHTTPRewriteRequestWrapper(inner io.ReadWriter, rewriteFunc HTTPRequestRewriteFunc) *HTTPRewriteHeaderWrapper {
@@ -115,6 +116,17 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				return
 			}
 
+			if r.headerParsed {
+				if closer, ok := r.inner.(io.Closer); ok {
+					log.Info("closing connection to reset HTTP/1.1 (for deliverable)")
+					closer.Close()
+					err = io.EOF
+					return
+				} else {
+					log.Fatal("connection does not implement Close()")
+				}
+			}
+
 			if in == 0 {
 				return
 			}
@@ -145,6 +157,8 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				r.lastBodyParse = r.input.Len()
 				return
 			}
+
+			r.headerParsed = true
 
 			r.lastBodyParse = 0
 
@@ -202,6 +216,8 @@ func (r *HTTPRewriteHeaderWrapper) Read(buff []byte) (n int, err error) {
 				r.lastBodyParse = r.input.Len()
 				return
 			}
+
+			r.headerParsed = true
 
 			r.lastBodyParse = 0
 

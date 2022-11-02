@@ -130,6 +130,8 @@ func (p *DynamicReverseProxy) Start(broker *Broker) {
 	if p.resolvedTarget != nil {
 		p.resolvedTarget.Closed()
 	}
+
+	log.Info("connection closed")
 }
 
 func (p *DynamicReverseProxy) err(s string, err error) {
@@ -338,6 +340,15 @@ func (r *ReadWriterWithPrefixBuffer) Read(buff []byte) (n int, err error) {
 
 func (r *ReadWriterWithPrefixBuffer) Write(buff []byte) (n int, err error) {
 	return r.inner.Write(buff)
+}
+
+func (r *ReadWriterWithPrefixBuffer) Close() (err error) {
+	if closer, ok := r.inner.(io.Closer); ok {
+		closer.Close()
+		return
+	}
+	err = fmt.Errorf("wrapped connection does not implement Close()")
+	return
 }
 
 func (p *DynamicReverseProxy) proxySelectTargetAndSetupPipe(proxyConn io.ReadWriter) {
