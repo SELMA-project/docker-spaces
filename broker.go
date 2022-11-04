@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+
 	// "log"
 	"time"
 )
@@ -121,6 +123,16 @@ type BrokerSlot struct {
 	oppositeSlot *BrokerSlot
 }
 
+func (s *BrokerSlot) JSON() any {
+	return struct {
+		State    string
+		Since    int64
+		SlotType string
+		RunInfo  any
+		RefInfo  any
+	}{s.state.String(), s.since, s.slotType, s.runInfo, s.refInfo}
+}
+
 // func newBrokerSlot(index, size int /* size = 3 */) *BrokerSlot {
 func newBrokerSlot(size int /* size = 3 */) *BrokerSlot {
 	// return &BrokerSlot{input: make(chan *BrokerMessage, size), output: make(chan *BrokerMessage, size) /* state: BrokerSlotState{}, */, index: index}
@@ -164,6 +176,39 @@ type Broker struct {
 
 	LoopSleep      int // in milliseconds
 	ReleaseTimeout int // in seconds
+
+	State []byte
+}
+
+func (b *Broker) JSON() []byte {
+	sourceSlots := make([]any, len(b.sourceSlots))
+	targetSlots := make([]any, len(b.targetSlots))
+	for i, slot := range b.sourceSlots {
+		sourceSlots[i] = slot.JSON()
+	}
+	for i, slot := range b.targetSlots {
+		targetSlots[i] = slot.JSON()
+	}
+	s := struct {
+		SourceSlots    []any
+		TargetSlots    []any
+		SourceName     string
+		TargetName     string
+		LoopSleep      int
+		ReleaseTimeout int
+	}{
+		sourceSlots,
+		targetSlots,
+		b.SourceName,
+		b.TargetName,
+		b.LoopSleep,
+		b.ReleaseTimeout,
+	}
+	data, err := json.MarshalIndent(s, "  ", "  ")
+	if err != nil {
+		log.Error("unable to marshal broker to JSON: %v", err)
+	}
+	return data
 }
 
 func NewBroker(sourceSlotCount, targetSlotCount, sleepMS, releaseTimeout int) *Broker {
