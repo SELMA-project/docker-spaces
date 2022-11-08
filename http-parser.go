@@ -429,3 +429,32 @@ func (r *ParsedHTTPRequest) WriteHeader(out io.Writer, pathUpdated bool, version
 func (r *ParsedHTTPRequest) WriteHead(out io.Writer) error {
 	return r.WriteHeader(out, true, true, true)
 }
+
+func parseSetCookieHeader(setCookie string) (name string, value string, attrs map[string]string, unparsed []string) {
+	unparsed = make([]string, 0, 5)
+	parts := strings.SplitN(setCookie, "=", 2)
+	name = parts[0]
+	if strings.HasPrefix(parts[1], "\"") {
+		parts = strings.SplitN(parts[1][1:], "\";", 2)
+		unparsed = append(unparsed, name+"=\""+parts[0]+"\"")
+	} else {
+		parts = strings.SplitN(parts[1], ";", 2)
+		unparsed = append(unparsed, name+"="+parts[0])
+	}
+	value = parts[0]
+	parts = strings.Split(strings.TrimSpace(parts[1]), "; ")
+	attrs = map[string]string{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		unparsed = append(unparsed, part)
+		kv := strings.SplitN(part, "=", 2)
+		name := kv[0]
+		value := ""
+		if len(kv) == 2 {
+			value = kv[1]
+		}
+		attrs[name] = value
+	}
+	// name, value, attrs, unparsed
+	return
+}
