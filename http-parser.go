@@ -247,6 +247,8 @@ type ParsedHTTPRequest struct {
 	requestLineLength int
 	endOfHeaders      int
 	response          bool
+	ConnectionInfo    any
+	UserData          any
 	Original          *ParsedHTTPRequest
 }
 
