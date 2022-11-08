@@ -246,6 +246,7 @@ type ParsedHTTPRequest struct {
 	requestLineLength int
 	endOfHeaders      int
 	response          bool
+	Original          *ParsedHTTPRequest
 }
 
 func (r *ParsedHTTPRequest) String() string {
@@ -304,6 +305,19 @@ func ParseHTTPRequest(buff []byte) (r *ParsedHTTPRequest, err error) {
 
 	r = &ParsedHTTPRequest{Method: method, Path: path, Query: query, Version: version, VersionMajor: major, VersionMinor: minor, Headers: headers,
 		buff: buff, requestLineLength: requestLineLength, endOfHeaders: endOfHeaders}
+
+	copyOfHeaders := make(http.Header, len(headers))
+
+	for k, vs := range headers {
+		tvs := make([]string, 0, len(vs))
+		// TODO: why copy(tvs, tv) didn't work
+		for _, v := range vs {
+			tvs = append(tvs, v)
+		}
+		copyOfHeaders[k] = tvs
+	}
+
+	r.Original = &ParsedHTTPRequest{Method: method, Path: path, Query: query, Version: version, VersionMajor: major, VersionMinor: minor, Headers: copyOfHeaders}
 
 	return
 }
