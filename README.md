@@ -22,15 +22,17 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 
 * [x] Scaling on multiple hosts in the cluster, example:  `./docker-spaces.linux.x86_64 -p 1100 -source 500 -cluster 19100:50:http://111.111.111.111:7878/docker:local -cluster 12100:5:unix:///var/run/docker.sock`
 
-* [x] Run docker-spaces inside Docker container: `docker run -p 44222:8888 -v /var/run/docker.sock:/var/run/docker.sock  --rm selmaproject/uc0:spaces18 --user USER --password PASSWORD`
+* [x] Run docker-spaces inside Docker container: `docker run -p 44222:8888 -v /var/run/docker.sock:/var/run/docker.sock  --restart=always selmaproject/uc0:spaces20 --user USER --password PASSWORD`
 
 * [x] GPU support added. When running with the `--gpu true` flag, all running containers will be allocated a separate GPU. This means that `-target int` flag must match the number of GPUs available on each host in the cluster: `./docker-spaces.linux.x86_64 -p 1100 --user USER --password PASSWORD -gpu -target 2` 
 
 * [x] Rabbit MQ worker dynamic scaling support added. A new parameter `--stop 60` is introduced to specify the delay in seconds between SIGTERM and SIGKILL signals sent to the redundant worker containers when docker-spaces scheduler decides to stop them. Another new parameter `--release 1800` specifies in seconds the minimum duration a new worker container instance will be kept running (if docker-spaces has free resources, worker will be allowed to run longer; if docker-spaces is out of resources, a request to create a new worker container will be ignored)
 
-* [x] HTTPS CORS support for serverless NLP pipeline calls directly from the Web frontend JavaScript, WASM (e.g. JupyterLight):
+* [x] HTTPS CORS support for frontend NLP pipeline calls directly from the Web frontend JavaScript, WASM (e.g. JupyterLight):
 `./docker-spaces.linux.x86_64 -p 1100 -tls -cors -cert cert.pem -key privkey.pem --user USER --password PASSWORD`
-      
+
+* [x] Monitoring of the Docker-spaces internal resource broker added: http://localhost:8888/monitor:broker/ (returns a JSON)
+
 * [ ] SQLite DB for accounts (2022spaces), state, config, docker-compose
 
 
