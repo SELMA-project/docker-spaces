@@ -229,6 +229,10 @@ func (r *ParsedHTTPResponse) WriteHeader(out io.Writer, versionUpdated bool, sta
 	return
 }
 
+func (r *ParsedHTTPResponse) WriteHead(out io.Writer) error {
+	return r.WriteHeader(out, true, true, true)
+}
+
 type ParsedHTTPRequest struct {
 	Method       string
 	Path         string
@@ -420,4 +424,8 @@ func (r *ParsedHTTPRequest) WriteHeader(out io.Writer, pathUpdated bool, version
 	// }
 
 	return
+}
+
+func (r *ParsedHTTPRequest) WriteHead(out io.Writer) error {
+	return r.WriteHeader(out, true, true, true)
 }
