@@ -29,6 +29,16 @@ func parseHTTPHeaders(lines []string) (headers http.Header, err error) {
 	return
 }
 
+func httpHeadersToString(headers http.Header, prefix string) string {
+	lines := make([]string, 0, len(headers)*2)
+	for name, values := range headers {
+		for _, value := range values {
+			lines = append(lines, prefix+name+": "+value)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 type ParsedHTTPResponse struct {
 	Version      string
 	VersionMajor int
@@ -40,6 +50,14 @@ type ParsedHTTPResponse struct {
 	buff             []byte
 	statusLineLength int
 	endOfHeaders     int
+}
+
+func (r *ParsedHTTPResponse) String() string {
+	return fmt.Sprintf("%s %d %s\n%s\n", fmt.Sprintf("HTTP/%d.%d", r.VersionMajor, r.VersionMinor), r.StatusCode, r.Status, httpHeadersToString(r.Headers, "> "))
+}
+
+func (r *ParsedHTTPResponse) Short() string {
+	return fmt.Sprintf("%s %d %s", fmt.Sprintf("HTTP/%d.%d", r.VersionMajor, r.VersionMinor), r.StatusCode, r.Status)
 }
 
 func ParseHTTPResponse(buff []byte) (r *ParsedHTTPResponse, err error) {
@@ -224,6 +242,14 @@ type ParsedHTTPRequest struct {
 	requestLineLength int
 	endOfHeaders      int
 	response          bool
+}
+
+func (r *ParsedHTTPRequest) String() string {
+	return fmt.Sprintf("%s %s%s %s\n%s\n", r.Method, r.Path, r.Query, fmt.Sprintf("HTTP/%d.%d", r.VersionMajor, r.VersionMinor), httpHeadersToString(r.Headers, "> "))
+}
+
+func (r *ParsedHTTPRequest) Short() string {
+	return fmt.Sprintf("%s %s%s %s", r.Method, r.Path, r.Query, fmt.Sprintf("HTTP/%d.%d", r.VersionMajor, r.VersionMinor))
 }
 
 func ParseHTTPRequest(buff []byte) (r *ParsedHTTPRequest, err error) {
