@@ -50,6 +50,7 @@ type ParsedHTTPResponse struct {
 	buff             []byte
 	statusLineLength int
 	endOfHeaders     int
+	Request          *ParsedHTTPRequest
 }
 
 func (r *ParsedHTTPResponse) String() string {
