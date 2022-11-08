@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"hash/crc32"
 	"net"
 	"strconv"
 	"strings"
@@ -77,7 +78,8 @@ func main() {
 	var certificates []tls.Certificate = make([]tls.Certificate, 0, 10)
 
 	if secure {
-		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		var cert tls.Certificate
+		cert, err = tls.LoadX509KeyPair(certPath, keyPath)
 		if err != nil {
 			log.Fatalf("failed to load certificate: %s", err)
 		}
@@ -227,13 +229,22 @@ func main() {
 	// start broker
 	go broker.Run()
 
-	dockerResolver := &DockerTargetResolver{}
+	// dockerResolver := &DockerTargetResolver{}
+	//
+	// hostResolver := &HostTargetResolver{}
+	//
+	// brokerResolver := &BrokerTargetResolver{broker}
+	//
+	// httpResolver := NewHTTPProtocolTargetResolver(dockerResolver, hostResolver, brokerResolver)
 
-	hostResolver := &HostTargetResolver{}
+	proxyLogger := NewProxyLogger(log) //.SetLevel(WarningLogLevel)
 
-	brokerResolver := &BrokerTargetResolver{broker}
+	// httpResolver := NewHTTPPipeResolver(&ContainerHandler{broker}, hostHandler, &DockerHandler{})
 
-	httpResolver := NewHTTPProtocolTargetResolver(dockerResolver, hostResolver, brokerResolver)
+	httpProxyConfiguration := NewHTTPProxyConfiguration(
+		&HTTPStaticHostHandler{ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))})
+
+	connectionCounter := 0
 
 	for {
 		conn, err := listener.Accept()
@@ -243,11 +254,12 @@ func main() {
 			continue
 		}
 
-		// p := NewDynamicReverseProxy(conn, &resolver)
-		p := NewDynamicReverseProxy(conn, httpResolver)
+		connectionCounter++
 
-		p.CORS = enableCORS
+		info := &ProxyConnInfo{TLS: secure, ID: strconv.Itoa(connectionCounter)}
 
-		go p.Start(broker)
+		p := NewDynamicReverseProxy2(proxyLogger.Derive().SetSource(info.ID), httpProxyConfiguration.NewProxy)
+
+		go p.Run(conn, info)
 	}
 }
