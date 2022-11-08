@@ -251,6 +251,53 @@ func (h *HTTPStaticHostHandler) ProcessRequest(
 
 	// convert to GET /http://target/some-resource
 
+	// fix referrer
+	if true {
+		var ref *url.URL
+		referer := request.Headers.Get("Referer")
+		if len(referer) > 0 {
+			log.Info("REFERER", referer)
+			ref, _ = url.Parse(referer)
+			log.Info("PARSED REFERER", ref)
+			log.Info("HOST", request.Headers.Get("Host"), "==", ref.Host)
+
+			// TODO: in case of host:port, the parse will fill .Scheme and .Opaque
+			// this checks for /path case when Host is empty or if the request is for the same host
+			if ref != nil /* && (len(ref.Host) == 0 || ref.Host == request.Headers.Get("Host")) */ {
+				log.Info("UPDATING REFERER")
+				ref.Path, targetAddress, secure, err = h.parseURLPath(ref.Path)
+				if err != nil {
+					log.Errorf("error parsing referer path: %v", err)
+				} else {
+					log.Info("referrer:", ref.Path)
+				}
+				ref.Host = targetHost
+
+				// prefix, target, targetPath := h.splitURLPath(ref.Path)
+				// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, targetPath)}}, "")
+
+				// prefix, target, _ /*targetPath*/ := h.splitURLPath(ref.Path)
+				// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, request.Path)}}, "")
+				// targetID = "redirect" // TODO: add random id or location hash so it won't match, is it necessary?
+				// return
+
+				request.Headers.Set("Referer", ref.String())
+			}
+		}
+	}
+	if true {
+		var ref *url.URL
+		origin := request.Headers.Get("Origin")
+		if len(origin) > 0 {
+			ref, _ = url.Parse(origin)
+
+			if ref != nil /* && (len(ref.Host) == 0 || ref.Host == request.Headers.Get("Host")) */ {
+				ref.Host = targetHost
+				request.Headers.Set("Origin", ref.String())
+			}
+		}
+	}
+
 	return
 }
 
@@ -332,7 +379,9 @@ func (h *HTTPStaticHostHandler) ProcessResponse(logger *ProxyLogger, response *P
 				// response.Headers.Set("Location", location)
 			}
 		}
-	} else {
+	} // else {
+	if true {
+		// TODO: check if redirect to the same remote host
 		// TODO: set cookie specific to this host/path, set path as /
 		var u url.URL
 		u.Host = h.proxyHost.Host
