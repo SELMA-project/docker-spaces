@@ -34,12 +34,16 @@ type LevelCoreLogger interface {
 	LLog(LoggerLevel, ...any)
 	LLogf(LoggerLevel, string, ...any)
 	SetLevel(LoggerLevel)
+	GetLevel() LoggerLevel
+	GetLogger() Logger
 }
 
 type LevelLogger interface {
 	LLog(LoggerLevel, ...any)
 	LLogf(LoggerLevel, string, ...any)
 	SetLevel(LoggerLevel)
+	GetLevel() LoggerLevel
+	GetLogger() Logger
 	Trace(...any)
 	Tracef(string, ...any)
 	Debug(...any)
@@ -60,6 +64,8 @@ type LevelLoggerCompatible interface {
 	LLog(LoggerLevel, ...any)
 	LLogf(LoggerLevel, string, ...any)
 	SetLevel(LoggerLevel)
+	GetLevel() LoggerLevel
+	GetLogger() Logger
 	Trace(...any)
 	Tracef(string, ...any)
 	Debug(...any)
@@ -156,6 +162,14 @@ func (l *LoggerLevelCoreWrapper) SetLevel(level LoggerLevel) {
 	l.level = level
 }
 
+func (l *LoggerLevelCoreWrapper) GetLevel() LoggerLevel {
+	return l.level
+}
+
+func (l *LoggerLevelCoreWrapper) GetLogger() Logger {
+	return l.Logger
+}
+
 // per level Logger wrapper implementing LevelCoreLogger interface
 
 type CoreMultiLevelLoggerWrapper struct {
@@ -165,6 +179,10 @@ type CoreMultiLevelLoggerWrapper struct {
 
 func (l *CoreMultiLevelLoggerWrapper) SetLevel(level LoggerLevel) {
 	l.level = level
+}
+
+func (l *CoreMultiLevelLoggerWrapper) GetLevel() LoggerLevel {
+	return l.level
 }
 
 func (l *CoreMultiLevelLoggerWrapper) SetLogger(level LoggerLevel, logger Logger) {
