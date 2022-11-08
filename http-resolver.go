@@ -52,11 +52,12 @@ const (
 	HTTPReaderStateHead HTTPReaderState = iota
 	HTTPReaderStateBody
 	HTTPReaderStateChunkedBody
+	HTTPReaderStateBodyStream
 	HTTPReaderStateUpgraded
 )
 
 func (s HTTPReaderState) String() string {
-	return [...]string{"HTTPReaderStateHead", "HTTPReaderStateBody", "HTTPReaderStateChunkedBody", "HTTPReaderStateUpgraded"}[s]
+	return [...]string{"HTTPReaderStateHead", "HTTPReaderStateBody", "HTTPReaderStateChunkedBody", "HTTPReaderStateBodyStream", "HTTPReaderStateUpgraded"}[s]
 }
 
 type HTTPRewriteHeaderWrapper struct {
