@@ -282,8 +282,8 @@ func (b *Broker) Run() {
 			switch message.Type() {
 			case BrokerMessageRelease:
 				if sourceSlot.state != BrokerSlotStateRun || yType(sourceSlot.slotType) { // GB: yType testu vajag uzprogrammet
-					b.freeSourceSlots <- sourceSlot
 					sourceSlot.state = BrokerSlotStateFree // GB: lai ciklos var atskirt TCPslotus, kas netiek lietoti
+					b.freeSourceSlots <- sourceSlot
 					break
 				}
 				// targetSlot := b.targetSlots[sourceSlot.oppositeIndex]
@@ -292,13 +292,15 @@ func (b *Broker) Run() {
 				targetSlot.since = now
 				kill := message.PayloadBool()
 				if kill {
+					log.Debug("broker: killing container because of TCP release with kill setting")
 					// targetSlot.image = "" // nil
 					targetSlot.slotType = ""
 					targetSlot.state = BrokerSlotStateFree
-					targetSlot.since = 0
+					targetSlot.since = 3
 					// set docker type to none ?
 					// kill docker
 				}
+				sourceSlot.state = BrokerSlotStateFree // GB: lai ciklos var atskirt TCPslotus, kas netiek lietoti
 				b.freeSourceSlots <- sourceSlot
 			case BrokerMessageAcquire:
 				// type acq struct {
@@ -376,8 +378,8 @@ func (b *Broker) Run() {
 
 				for _, sourceSlot := range b.sourceSlots {
 					if sourceSlot.state == BrokerSlotStateWait && sourceSlot.slotType == targetSlot.slotType {
-						b.freeSourceSlots <- sourceSlot
 						sourceSlot.state = BrokerSlotStateFree
+						b.freeSourceSlots <- sourceSlot
 						sourceSlot.send(NewBrokerMessage(BrokerMessageError, message.PayloadString()))
 					}
 
@@ -385,7 +387,7 @@ func (b *Broker) Run() {
 
 				targetSlot.state = BrokerSlotStateFree
 				targetSlot.slotType = ""
-				targetSlot.since = 0 // now
+				targetSlot.since = 5 // now
 
 				// A: no such image in DockerHub --> signal ERROR to TCPopposite and goto FREE
 				// B: no resources on the host to start a new container --> kill old & set FREE(NIL)+NOW and keep trying in 2 sec
@@ -406,6 +408,7 @@ func (b *Broker) Run() {
 					if (targetSlot.state == BrokerSlotStateFree || targetSlot.state == BrokerSlotStateRun) && targetSlot.slotType == sourceSlot.slotType {
 						// brīvs konteineris
 						targetSlot.state = BrokerSlotStateRun
+						targetSlot.since = now
 						// targetSlot.oppositeIndex = sourceSlot.index
 						// sourceSlot.oppositeIndex = targetSlot.index
 						// targetSlot.oppositeSlot = sourceSlot
@@ -423,6 +426,7 @@ func (b *Broker) Run() {
 					if targetSlot.state == BrokerSlotStateFree && targetSlot.slotType == sourceSlot.slotType {
 						// brīvs konteineris
 						targetSlot.state = BrokerSlotStateRun
+						targetSlot.since = now
 						// targetSlot.oppositeIndex = sourceSlot.index
 						// sourceSlot.oppositeIndex = targetSlot.index
 						// targetSlot.oppositeSlot = sourceSlot
@@ -595,7 +599,7 @@ func (b *Broker) Run() {
 				log.Debug("broker: releasing target slot")
 				slotD.state = BrokerSlotStateFree
 				slotD.slotType = ""
-				slotD.since = 0
+				slotD.since = 7
 			}
 		}
 
