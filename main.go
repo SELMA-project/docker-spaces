@@ -44,6 +44,7 @@ func main() {
 	var enableGPU bool = false
 	var releaseTimeout int = 1800
 	var stopTimeout int = 0
+	var root string
 
 	// <host-start-port>:<target-slot(docker-runner)-count>:<docker-host-url>
 
@@ -67,6 +68,7 @@ func main() {
 	flag.IntVar(&releaseTimeout, "release", releaseTimeout, "container release timeout in seconds")
 	flag.IntVar(&stopTimeout, "stop", stopTimeout, "container stop timeout before kill in seconds")
 	flag.Var(&clusterDefs, "cluster", "cluster configuration in following format: <host-start-port>:<target-slot(docker-runner)-count>:<docker-host-url>")
+	flag.StringVar(&root, "root", root, "redirect root / to specified host")
 
 	flag.Parse()
 
