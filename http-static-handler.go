@@ -22,89 +22,76 @@ func (h *HTTPStaticHostHandler) Closed(logger *ProxyLogger, request *ParsedHTTPR
 	return
 }
 
-func (h *HTTPStaticHostHandler) Responds(logger *ProxyLogger, request *ParsedHTTPRequest) bool {
+func (h *HTTPStaticHostHandler) resolveByReferrer(logger *ProxyLogger, request *ParsedHTTPRequest, referrer string) (targetAddress string, secure bool, err error) {
 
-	// log := logger.WithExtension("-responsds")
-
-	_, info, _, err := h.parseURLPath(request.Path)
-	if err != nil {
-		return false
-	}
-
-	return len(info) > 0
-}
-
-func (h *HTTPStaticHostHandler) ProcessRequest(
-	logger *ProxyLogger,
-	request *ParsedHTTPRequest,
-	prevTargetConn io.ReadWriteCloser,
-	prevTargetID string) (targetConn io.ReadWriteCloser, targetID string, err error) {
-
-	log := logger.WithExtension(": static-host: process-request")
+	log := logger
 	fmt := log.E
 
-	var targetAddress string
+	if len(referrer) == 0 {
+		return
+	}
 
-	defer func() {
-		// close previous connection if not passed through
-		if prevTargetConn != nil && (targetConn == nil || prevTargetConn != targetConn) {
-			prevTargetConn.Close()
+	// referrer is non-zero, if fail, then exit
+	if strings.HasPrefix(referrer, "/") {
+		// absolute path without host starting with /
+		_, targetAddress, secure, err = h.parseURLPath(referrer)
+		if err != nil {
+			err = fmt.Errorf("invalid path: %w", err)
+			return
 		}
-		// on error close target connection if by some reason it is open
-		if err != nil && targetConn != nil {
-			targetConn.Close()
-			targetConn = nil
+	} else {
+		var ref *url.URL
+		ref, err = url.Parse(referrer)
+		if err != nil {
+			return
 		}
-		if targetConn != nil && request != nil {
-			log.Debugf("forwarding request to target %s: %s\n", targetAddress, request)
+		// same host is required
+		if ref.Host != request.Headers.Get("Host") {
+			log.Warn("referrer host %s does not match with the Host header %s", ref.Host, request.Headers.Get("Host"))
+			return
 		}
-	}()
+		_, targetAddress, secure, err = h.parseURLPath(ref.Path)
+		if err != nil {
+			return
+		}
+	}
 
-	log.Debug("got HTTP request:", request)
+	return
+}
 
-	// var info string
-	var secure bool
+func (h *HTTPStaticHostHandler) processRequestHead(logger *ProxyLogger, request *ParsedHTTPRequest) (level int, targetAddress string, secure bool, err error) {
 
-	// request.Path, info, err = r.parseURLPath(request.Path)
+	// log := logger.WithExtension(": static-host: process-request-head")
+	log := logger
+	fmt := log.E
+
 	request.Path, targetAddress, secure, err = h.parseURLPath(request.Path)
 	if err != nil {
 		err = fmt.Errorf("error parsing path: %w", err)
-		// if prevTargetConn != nil {
-		// 	prevTargetConn.Close()
-		// }
 		return
 	}
 	if len(targetAddress) > 0 {
+		level = 0
 		log.Info("resolved via path")
-	} else /*if len(targetAddress) == 0*/ {
-		var ref *url.URL
+	} else {
+		// try with referer header
+		referrer := request.Headers.Get("Referer")
 
-		referer := request.Headers.Get("Referer")
-		if len(referer) > 0 {
-			ref, _ = url.Parse(referer)
+		targetAddress, secure, err = h.resolveByReferrer(logger, request, referrer)
+
+		if err == nil && len(targetAddress) > 0 {
+			level = 1
+			log.Info("resolved via referrer:", referrer)
 		}
-
-		// TODO: in case of host:port, the parse will fill .Scheme and .Opaque
-		// this checks for /path case when Host is empty or if the request is for the same host
-		if ref != nil && (len(ref.Host) == 0 || ref.Host == request.Headers.Get("Host")) {
-			_, targetAddress, secure, err = h.parseURLPath(ref.Path)
-			if err != nil {
-				err = fmt.Errorf("error parsing referer path: %w", err)
-				return
-			}
-
-			log.Info("resolved via referrer:", ref.Path)
-
-			// prefix, target, targetPath := h.splitURLPath(ref.Path)
-			// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, targetPath)}}, "")
-
-			// prefix, target, _ /*targetPath*/ := h.splitURLPath(ref.Path)
-			// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, request.Path)}}, "")
-			// targetID = "redirect" // TODO: add random id or location hash so it won't match, is it necessary?
-			// return
-		}
-
 	}
+
+	// prefix, target, targetPath := h.splitURLPath(ref.Path)
+	// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, targetPath)}}, "")
+
+	// prefix, target, _ /*targetPath*/ := h.splitURLPath(ref.Path)
+	// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, request.Path)}}, "")
+	// targetID = "redirect" // TODO: add random id or location hash so it won't match, is it necessary?
+
 	if len(targetAddress) == 0 {
 		// let's try once more by checking cookies
 		cookies := map[string]string{}
@@ -122,31 +109,66 @@ func (h *HTTPStaticHostHandler) ProcessRequest(
 		if cookie, ok := cookies["Reverse-Proxy-Host-"+h.ID]; ok {
 			// we expect the same format as the referrer header, i.e., http[s]://host:port/[s]host:<host>[:port]
 			// so that the first segment of the path can be parsed out
-			var ref *url.URL
 
-			referer := cookie
-			if len(referer) > 0 {
-				ref, _ = url.Parse(referer)
+			targetAddress, secure, err = h.resolveByReferrer(logger, request, cookie)
+
+			if err == nil && len(targetAddress) > 0 {
+				level = 2
+				log.Info("resolved via cookie:", cookie)
 			}
 
-			// TODO: in case of host:port, the parse will fill .Scheme and .Opaque
-			// this checks for /path case when Host is empty or if the request is for the same host
-			if ref != nil && (len(ref.Host) == 0 || ref.Host == request.Headers.Get("Host")) {
-				_, targetAddress, secure, err = h.parseURLPath(ref.Path)
-				if err != nil {
-					err = fmt.Errorf("error parsing cookie based path: %w", err)
-					return
-				}
-
-				log.Info("resolved via cookie:", referer)
-
-				// prefix, target, _ /*targetPath*/ := h.splitURLPath(ref.Path)
-				// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, request.Path)}}, "")
-				// targetID = "redirect" // TODO: add random id or location hash so it won't match
-				// return
-			}
+			// prefix, target, _ /*targetPath*/ := h.splitURLPath(ref.Path)
+			// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, request.Path)}}, "")
+			// targetID = "redirect" // TODO: add random id or location hash so it won't match
+			// return
 		}
 	}
+
+	return
+}
+
+func (h *HTTPStaticHostHandler) RespondsAtLevel(logger *ProxyLogger, request *ParsedHTTPRequest) int {
+
+	// log := logger.WithExtension(": static-host: responds")
+
+	level, targetAddress, _, err := h.processRequestHead(logger, request)
+	if len(targetAddress) > 0 && err == nil {
+		return level
+	}
+
+	return -1
+}
+
+func (h *HTTPStaticHostHandler) ProcessRequest(
+	logger *ProxyLogger,
+	request *ParsedHTTPRequest,
+	prevTargetConn io.ReadWriteCloser,
+	prevTargetID string) (targetConn io.ReadWriteCloser, targetID string, err error) {
+
+	log := logger.WithExtension(": static-host: process-request")
+	fmt := log.E
+
+	var targetAddress string
+
+	defer func() {
+		// close previous connection if not passed through
+		if prevTargetConn != nil && prevTargetConn != targetConn {
+			prevTargetConn.Close()
+		}
+		// on error close target connection if by some reason it is open
+		if err != nil && targetConn != nil {
+			targetConn.Close()
+			targetConn = nil
+		}
+		if targetConn != nil && request != nil {
+			log.Debugf("forwarding request to target %s: %s\n", targetAddress, request)
+		}
+	}()
+
+	log.Debug("got HTTP request:", request)
+
+	_, targetAddress, secure, err := h.processRequestHead(logger, request)
+
 	log.Trace("request path is now:", request.Path)
 
 	// if info == nil {

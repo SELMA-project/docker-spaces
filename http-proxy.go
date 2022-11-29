@@ -7,7 +7,8 @@ import (
 
 // stateless, to be reused
 type HTTPHandler interface {
-	Responds(logger *ProxyLogger, request *ParsedHTTPRequest) bool
+	// NOTE: each handler may have internally a common responder function for both RespondsAtLevel and ProcessRequest
+	RespondsAtLevel(logger *ProxyLogger, request *ParsedHTTPRequest) int
 	ProcessRequest(logger *ProxyLogger, request *ParsedHTTPRequest, prevTargetConn io.ReadWriteCloser, prevTargetID string) (targetConn io.ReadWriteCloser, targetID string, err error)
 	ProcessResponse(logger *ProxyLogger, response *ParsedHTTPResponse) (err error)
 	Closed(logger *ProxyLogger, request *ParsedHTTPRequest)
@@ -181,19 +182,37 @@ func (p *HTTPProxy) TransferChunkForward() (err error) {
 			p.requestHandlerLogger.SetTarget("", false)
 			target = nil
 
+			log.Trace("got request:", request.Short())
+
 			// try handlers
+			level := -1
+			var handlerAtLevel HTTPHandler
 			for _, handler := range p.handlers {
-				if handler.Responds(p.requestHandlerLogger, request) {
-					target, targetID, err = handler.ProcessRequest(p.requestHandlerLogger, request, p.target, p.targetID)
-					if err == nil && target != nil {
-						p.handler = handler
-						p.requestHandlerLogger.SetTarget(targetID, false)
-						p.responseHandlerLogger.SetTarget(targetID, true)
+				log.Tracef("checking if handler %s responds", handler)
+				if l := handler.RespondsAtLevel(p.requestHandlerLogger, request); l >= 0 && (level == -1 || l < level) {
+					log.Tracef("handler %s responded at level %d", handler, l)
+					level = l
+					handlerAtLevel = handler
+					if l == 0 {
+						// responds at top level, no need to further try more handlers
 						break
 					}
 				}
 			}
 
+			if level >= 0 && handlerAtLevel != nil {
+				// responded
+				handler := handlerAtLevel
+				log.Debug("processing request with handler %s responded at level %d", handler, level)
+				target, targetID, err = handler.ProcessRequest(p.requestHandlerLogger, request, p.target, p.targetID)
+				if err == nil && target != nil {
+					p.handler = handler
+					p.requestHandlerLogger.SetTarget(targetID, false)
+					p.responseHandlerLogger.SetTarget(targetID, true)
+				}
+			}
+
+			// TODO: remove this after all handlers will implement complete RespondsAtLevel
 			if target == nil {
 				for _, handler := range p.handlers {
 					target, targetID, err = handler.ProcessRequest(p.requestHandlerLogger, request, p.target, p.targetID)
