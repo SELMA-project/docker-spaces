@@ -244,7 +244,9 @@ func main() {
 	// httpResolver := NewHTTPPipeResolver(&ContainerHandler{broker}, hostHandler, &DockerHandler{})
 
 	httpProxyConfiguration := NewHTTPProxyConfiguration(
-		&HTTPStaticHostHandler{ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))})
+		&HTTPStaticHostHandler{ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))},
+		&HTTPContainerHandler{broker: broker, ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))},
+	)
 
 	connectionCounter := 0
 

@@ -57,7 +57,9 @@ type BrokerTargetResolver struct {
 type DockerContainerInfo struct {
 	image string
 	port  int
+	gpu   bool
 	envs  map[string]string
+	Type  string
 }
 
 func brokerTargetResolverParseURLPath(path string) (pathRewrite string, yType bool, info *DockerContainerInfo, err error) {
@@ -107,7 +109,7 @@ func brokerTargetResolverParseURLPath(path string) (pathRewrite string, yType bo
 
 	image := fmt.Sprintf("%s/%s:%s", ps[1], ps[2], ps[3])
 
-	info = &DockerContainerInfo{image, port, envs}
+	info = &DockerContainerInfo{image: image, port: port, envs: envs}
 
 	pathRewrite = "/"
 

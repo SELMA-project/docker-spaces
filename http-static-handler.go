@@ -13,6 +13,10 @@ type HTTPStaticHostHandler struct {
 	proxyHost *url.URL
 }
 
+func (h *HTTPStaticHostHandler) String() string {
+	return "HTTPStaticHostHandler"
+}
+
 func (h *HTTPStaticHostHandler) Closed(logger *ProxyLogger, request *ParsedHTTPRequest) {
 
 	log := logger.WithExtension("-closed")
@@ -129,9 +133,9 @@ func (h *HTTPStaticHostHandler) processRequestHead(logger *ProxyLogger, request 
 
 func (h *HTTPStaticHostHandler) RespondsAtLevel(logger *ProxyLogger, request *ParsedHTTPRequest) int {
 
-	// log := logger.WithExtension(": static-host: responds")
+	log := logger.WithExtension(": static-host: responds-at-level")
 
-	level, targetAddress, _, err := h.processRequestHead(logger, request)
+	level, targetAddress, _, err := h.processRequestHead(log, request)
 	if len(targetAddress) > 0 && err == nil {
 		return level
 	}
@@ -169,16 +173,12 @@ func (h *HTTPStaticHostHandler) ProcessRequest(
 
 	_, targetAddress, secure, err := h.processRequestHead(logger, request)
 
-	log.Trace("request path is now:", request.Path)
-
-	// if info == nil {
 	if len(targetAddress) == 0 {
 		log.Debug("not a host request:", request.Method, request.Path)
-		if prevTargetConn != nil {
-			prevTargetConn.Close()
-		}
 		return
 	}
+
+	log.Trace("request path is now:", request.Path)
 
 	// if len(info.address) == 0 {
 	// 	err = fmt.Errorf("target not found")
