@@ -63,16 +63,20 @@ func (h *HTTPStaticHostHandler) resolveByReferrer(logger *ProxyLogger, request *
 	return
 }
 
-func (h *HTTPStaticHostHandler) processRequestHead(logger *ProxyLogger, request *ParsedHTTPRequest) (level int, targetAddress string, secure bool, err error) {
+func (h *HTTPStaticHostHandler) processRequestHead(logger *ProxyLogger, request *ParsedHTTPRequest, dryRun bool) (level int, targetAddress string, secure bool, err error) {
 
 	// log := logger.WithExtension(": static-host: process-request-head")
 	log := logger
 	fmt := log.E
 
-	request.Path, targetAddress, secure, err = h.parseURLPath(request.Path)
+	var newPath string
+	newPath, targetAddress, secure, err = h.parseURLPath(request.Path)
 	if err != nil {
 		err = fmt.Errorf("error parsing path: %w", err)
 		return
+	}
+	if !dryRun {
+		request.Path = newPath
 	}
 	if len(targetAddress) > 0 {
 		level = 0
@@ -137,7 +141,7 @@ func (h *HTTPStaticHostHandler) RespondsAtLevel(logger *ProxyLogger, request *Pa
 
 	log := logger.WithExtension(": static-host: responds-at-level")
 
-	level, targetAddress, _, err := h.processRequestHead(log, request)
+	level, targetAddress, _, err := h.processRequestHead(log, request, true)
 	if len(targetAddress) > 0 && err == nil {
 		return level
 	}
@@ -173,7 +177,7 @@ func (h *HTTPStaticHostHandler) ProcessRequest(
 
 	log.Debug("got HTTP request:", request)
 
-	_, targetAddress, secure, err := h.processRequestHead(logger, request)
+	_, targetAddress, secure, err := h.processRequestHead(logger, request, false)
 
 	if len(targetAddress) == 0 {
 		log.Debug("not a host request:", request.Short())

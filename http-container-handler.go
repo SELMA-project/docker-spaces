@@ -77,16 +77,20 @@ func (h *HTTPContainerHandler) resolveByReferrer(logger *ProxyLogger, request *P
 	return
 }
 
-func (h *HTTPContainerHandler) processRequestHead(logger *ProxyLogger, request *ParsedHTTPRequest) (level int, info *DockerContainerInfo, err error) {
+func (h *HTTPContainerHandler) processRequestHead(logger *ProxyLogger, request *ParsedHTTPRequest, dryRun bool) (level int, info *DockerContainerInfo, err error) {
 
 	// log := logger.WithExtension(": container-handler: process-request-head")
 	log := logger
 	fmt := log.E
 
-	request.Path, info, err = h.parseURLPath(request.Path)
+	var newPath string
+	newPath, info, err = h.parseURLPath(request.Path)
 	if err != nil {
 		err = fmt.Errorf("error parsing path: %w", err)
 		return
+	}
+	if !dryRun {
+		request.Path = newPath
 	}
 	if info != nil {
 		level = 0
@@ -151,7 +155,7 @@ func (h *HTTPContainerHandler) RespondsAtLevel(logger *ProxyLogger, request *Par
 
 	log := logger.WithExtension(": container-handler: responds-at-level")
 
-	level, info, err := h.processRequestHead(log, request)
+	level, info, err := h.processRequestHead(log, request, true)
 	if info != nil && err == nil {
 		return level
 	}
@@ -191,7 +195,7 @@ func (h *HTTPContainerHandler) ProcessRequest(
 
 	yType := false
 
-	_, containerInfo, err = h.processRequestHead(logger, request)
+	_, containerInfo, err = h.processRequestHead(logger, request, false)
 
 	if containerInfo == nil {
 		log.Debug("not a container request:", request.Short())
