@@ -246,6 +246,7 @@ func main() {
 	httpProxyConfiguration := NewHTTPProxyConfiguration(
 		&HTTPStaticHostHandler{ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))},
 		&HTTPContainerHandler{broker: broker, ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))},
+		&HTTPDockerLocalHandler{},
 	)
 
 	connectionCounter := 0
