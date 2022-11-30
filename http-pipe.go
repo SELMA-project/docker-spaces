@@ -215,7 +215,10 @@ func (p *HTTPPipe) ParseResponse() (response *ParsedHTTPResponse, err error) {
 	contentLength := response.Headers.Get("Content-Length")
 	transferEncoding := response.Headers.Get("Transfer-Encoding")
 	// https://stackoverflow.com/a/11375745
-	if len(contentLength) == 0 && response.VersionMajor == 1 && response.VersionMinor == 1 || transferEncoding == "chunked" {
+	if response.StatusCode == 204 && len(contentLength) == 0 && response.VersionMajor == 1 && response.VersionMinor == 1 {
+		p.state = HTTPReaderStateHead
+		p.bodyToRead = 0
+	} else if len(contentLength) == 0 && response.VersionMajor == 1 && response.VersionMinor == 1 || transferEncoding == "chunked" {
 		p.state = HTTPReaderStateChunkedBody
 		p.bodyToRead = 0
 	} else if response.StatusCode == 204 {
