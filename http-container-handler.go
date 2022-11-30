@@ -65,7 +65,7 @@ func (h *HTTPContainerHandler) resolveByReferrer(logger *ProxyLogger, request *P
 		}
 		// same host is required
 		if ref.Host != request.Headers.Get("Host") {
-			log.Warn("referrer host %s does not match with the Host header %s", ref.Host, request.Headers.Get("Host"))
+			log.Warnf("referrer host %s does not match with the Host header %s", ref.Host, request.Headers.Get("Host"))
 			return
 		}
 		_, info, err = h.parseURLPath(ref.Path)
@@ -96,6 +96,8 @@ func (h *HTTPContainerHandler) processRequestHead(logger *ProxyLogger, request *
 		referrer := request.Headers.Get("Referer")
 
 		info, err = h.resolveByReferrer(logger, request, referrer)
+
+		log.Tracef("process-request-head: resolve by referrer %s got error: %v", referrer, err)
 
 		if err == nil && info != nil {
 			level = 1
@@ -192,7 +194,7 @@ func (h *HTTPContainerHandler) ProcessRequest(
 	_, containerInfo, err = h.processRequestHead(logger, request)
 
 	if containerInfo == nil {
-		log.Debug("not a host request:", request.Method, request.Path)
+		log.Debug("not a container request:", request.Short())
 		return
 	}
 

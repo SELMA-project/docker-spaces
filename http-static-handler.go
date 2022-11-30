@@ -51,7 +51,7 @@ func (h *HTTPStaticHostHandler) resolveByReferrer(logger *ProxyLogger, request *
 		}
 		// same host is required
 		if ref.Host != request.Headers.Get("Host") {
-			log.Warn("referrer host %s does not match with the Host header %s", ref.Host, request.Headers.Get("Host"))
+			log.Warnf("referrer host %s does not match with the Host header %s", ref.Host, request.Headers.Get("Host"))
 			return
 		}
 		_, targetAddress, secure, err = h.parseURLPath(ref.Path)
@@ -82,6 +82,8 @@ func (h *HTTPStaticHostHandler) processRequestHead(logger *ProxyLogger, request 
 		referrer := request.Headers.Get("Referer")
 
 		targetAddress, secure, err = h.resolveByReferrer(logger, request, referrer)
+
+		log.Tracef("process-request-head: resolve by referrer %s got error: %v", referrer, err)
 
 		if err == nil && len(targetAddress) > 0 {
 			level = 1
@@ -174,7 +176,7 @@ func (h *HTTPStaticHostHandler) ProcessRequest(
 	_, targetAddress, secure, err := h.processRequestHead(logger, request)
 
 	if len(targetAddress) == 0 {
-		log.Debug("not a host request:", request.Method, request.Path)
+		log.Debug("not a host request:", request.Short())
 		return
 	}
 
