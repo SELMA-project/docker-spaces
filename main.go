@@ -247,6 +247,7 @@ func main() {
 		&HTTPStaticHostHandler{ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))},
 		&HTTPContainerHandler{broker: broker, ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))},
 		&HTTPDockerLocalHandler{},
+		&HTTPBrokerMonitorHandler{broker},
 	)
 
 	connectionCounter := 0
