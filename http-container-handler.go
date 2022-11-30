@@ -257,7 +257,7 @@ func (h *HTTPContainerHandler) ProcessRequest(
 	} else {
 		// connect
 		log.Trace("connecting to target:", remoteAddress)
-		secure := false
+		secure := false // TODO: ?!
 		if secure {
 			targetConn, err = tls.Dial("tcp", remoteAddress, nil)
 		} else {

@@ -58,6 +58,10 @@ func (p *HTTPPipe) Logger() *ProxyLogger {
 }
 
 func (p *HTTPPipe) ExpectHead() bool {
+	return p.state == HTTPReaderStateHead || p.state == HTTPReaderStateIncompleteHead
+}
+
+func (p *HTTPPipe) StartHead() bool {
 	return p.state == HTTPReaderStateHead
 }
 
@@ -124,7 +128,7 @@ func (p *HTTPPipe) ParseRequest() (request *ParsedHTTPRequest, err error) {
 
 	log.Trace("state:", p.state, p.bodyToRead)
 
-	if p.state != HTTPReaderStateHead {
+	if p.state != HTTPReaderStateHead && p.state != HTTPReaderStateIncompleteHead {
 		// we do not expect header data
 		return
 	}
@@ -141,6 +145,8 @@ func (p *HTTPPipe) ParseRequest() (request *ParsedHTTPRequest, err error) {
 
 	if request == nil {
 		// not enough data, caller has to provide more data by calling Read()
+		log.Trace("incomplete header, more data needed")
+		p.state = HTTPReaderStateIncompleteHead
 		return
 	}
 
@@ -193,13 +199,14 @@ func (p *HTTPPipe) ParseResponse() (response *ParsedHTTPResponse, err error) {
 
 	log.Trace("state:", p.state)
 
-	if p.state != HTTPReaderStateHead {
+	if p.state != HTTPReaderStateHead && p.state != HTTPReaderStateIncompleteHead {
 		// we do not expect header data
 		return
 	}
 
 	// log.Trace("got data:", string(p.input.Bytes()), p.input.Bytes(), p.input.Len())
 	log.Trace("got data size:", p.input.Len())
+	// log.Trace("response data:", string(p.input.Bytes()))
 	response, err = ParseHTTPResponse(p.input.Bytes())
 	if err != nil {
 		err = fmt.Errorf("error parsing HTTP response: %w", err)
@@ -209,6 +216,8 @@ func (p *HTTPPipe) ParseResponse() (response *ParsedHTTPResponse, err error) {
 
 	if response == nil {
 		// not enough data, caller has to provide more data by calling Read()
+		log.Trace("incomplete header, more data needed")
+		p.state = HTTPReaderStateIncompleteHead
 		return
 	}
 

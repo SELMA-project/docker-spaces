@@ -290,7 +290,8 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 
 	var request *ParsedHTTPRequest
 	// first wait for a request, so that target is resolved, only then try to read response
-	if p.backward.ExpectHead() {
+	// only once on initial head parse
+	if p.backward.StartHead() {
 		// awaiting head
 		log.Tracef("waiting for request")
 		request = <-p.requestChan
