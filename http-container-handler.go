@@ -83,6 +83,8 @@ func (h *HTTPContainerHandler) processRequestHead(logger *ProxyLogger, request *
 	log := logger
 	fmt := log.E
 
+	level = -1
+
 	var newPath string
 	newPath, info, err = h.parseURLPath(request.Path)
 	if err != nil {

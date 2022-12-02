@@ -100,7 +100,7 @@ func (p *HTTPProxy) Close() (err error) {
 
 func (p *HTTPProxy) TransferChunkForward() (err error) {
 
-	log := p.log.WithExtension("-trasnfer-chunk-forward")
+	log := p.log.WithExtension("-transfer-chunk-forward")
 	fmt := log.E
 
 	if p.forward.Upgraded() {
@@ -301,6 +301,8 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 			return
 		}
 		// log.Trace("got request:", request)
+	} else {
+		request = p.request
 	}
 
 	log.Tracef("reading from target")

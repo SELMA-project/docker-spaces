@@ -69,6 +69,8 @@ func (h *HTTPStaticHostHandler) processRequestHead(logger *ProxyLogger, request 
 	log := logger
 	fmt := log.E
 
+	level = -1
+
 	var newPath string
 	newPath, targetAddress, secure, err = h.parseURLPath(request.Path)
 	if err != nil {
