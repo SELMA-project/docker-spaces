@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -75,6 +76,16 @@ func main() {
 	var err error
 
 	proxyAddress := fmt.Sprintf(":%d", port) // ":8888"
+
+	var rootURL *url.URL
+
+	// fail early
+	if len(root) > 0 {
+		rootURL, err = parseURL(root)
+		if err != nil {
+			log.Fatalf("invalid root URL %s, go error: %v", root, err)
+		}
+	}
 
 	var listener net.Listener
 	var certificates []tls.Certificate = make([]tls.Certificate, 0, 10)
@@ -243,11 +254,14 @@ func main() {
 
 	// httpResolver := NewHTTPPipeResolver(&ContainerHandler{broker}, hostHandler, &DockerHandler{})
 
+	instanceID := strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))
+
 	httpProxyConfiguration := NewHTTPProxyConfiguration(
-		&HTTPStaticHostHandler{ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))},
-		&HTTPContainerHandler{broker: broker, ID: strconv.Itoa(int(crc32.ChecksumIEEE([]byte(proxyAddress))))},
+		&HTTPStaticHostHandler{ID: instanceID},
+		&HTTPContainerHandler{broker: broker, ID: instanceID},
 		&HTTPDockerLocalHandler{},
 		&HTTPBrokerMonitorHandler{broker},
+		&HTTPRootHostHandler{ID: instanceID, Target: rootURL},
 	)
 
 	connectionCounter := 0
