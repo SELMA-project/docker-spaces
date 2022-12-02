@@ -33,3 +33,31 @@ func URLJoinPath(base string, elem ...string) (result string, err error) {
 
 	return
 }
+
+func parseURL(URL string) (u *url.URL, err error) {
+	if !strings.HasPrefix(URL, "http://") && !strings.HasPrefix(URL, "https://") {
+		// assume missing http[s] scheme by port
+		host := strings.SplitN(URL, "/", 2)[0]
+		hostPort := strings.SplitN(host, ":", 2)
+		if len(hostPort) == 2 {
+			if hostPort[1] == "80" {
+				URL = "http://" + URL
+			} else if hostPort[1] == "443" {
+				URL = "https://" + URL
+			}
+		} else {
+			URL = "http://" + URL
+		}
+	}
+	u, err = url.Parse(URL)
+	// add default port, if missing
+	hostPort := strings.SplitN(u.Host, ":", 2)
+	if len(hostPort) != 2 {
+		if u.Scheme == "http" {
+			u.Host += ":80"
+		} else if u.Scheme == "https" {
+			u.Host += ":443"
+		}
+	}
+	return
+}
