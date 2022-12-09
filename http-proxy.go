@@ -37,6 +37,7 @@ type HTTPProxy struct {
 	responseHandlerLogger *ProxyLogger
 	requestChan           chan *ParsedHTTPRequest
 	request               *ParsedHTTPRequest
+	backwardRequest       *ParsedHTTPRequest
 	targetID              string
 	handler               HTTPHandler
 	handlers              []HTTPHandler
@@ -291,10 +292,14 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 	var request *ParsedHTTPRequest
 	// first wait for a request, so that target is resolved, only then try to read response
 	// only once on initial head parse
-	if p.backward.StartHead() {
+	if p.backward.StartHead() || (p.backward.ExpectHead() && p.backwardRequest == nil) {
 		// awaiting head
 		log.Tracef("waiting for request")
 		request = <-p.requestChan
+		p.backwardRequest = request
+		if request != nil {
+			log.Trace("storing backward request:", p.backwardRequest.Short())
+		}
 		if request == nil {
 			log.Debug("got empty request, exiting")
 			err = io.EOF
@@ -302,7 +307,8 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 		}
 		// log.Trace("got request:", request)
 	} else {
-		request = p.request
+		request = p.backwardRequest
+		log.Trace("re-stored backward request:", request)
 	}
 
 	log.Tracef("reading from target")
@@ -336,7 +342,17 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 		}
 
 		if response != nil {
+			log.Trace("got response:", response.Short())
+		} else {
+			log.Trace("parser returned nil response, err:", err)
+		}
 
+		if response != nil {
+
+			log.Trace("clear backward request storage, current value to be cleared:", p.backwardRequest.Short())
+			p.backwardRequest = nil // optional?
+
+			log.Trace("active request for response:", request.Short())
 			response.Request = request
 
 			err = p.handler.ProcessResponse(p.responseHandlerLogger, response)
