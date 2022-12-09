@@ -210,6 +210,11 @@ func (h *HTTPRootHostHandler) ProcessRequest(
 	log := logger.WithExtension(": root-host: process-request")
 	fmt := log.E
 
+	if h.Target == nil {
+		log.Info("root redirect disabled")
+		return
+	}
+
 	var targetAddress string
 
 	defer func() {
