@@ -298,50 +298,113 @@ func (h *HTTPContainerHandler) parseURLPath(path string) (pathRewrite string, in
 
 	pathRewrite = path
 
-	if !strings.HasPrefix(path, "/container:") {
-		return
-	}
+	if strings.HasPrefix(path, "/container:") {
 
-	pathParts := strings.SplitN(path, "/", 3)
+		pathParts := strings.SplitN(path, "/", 3)
 
-	var pts []string
+		var pts []string
 
-	pts = strings.SplitN(pathParts[1], ":", 2)
+		pts = strings.SplitN(pathParts[1], ":", 2)
 
-	argDefs := strings.Split(pts[1], ";")
+		argDefs := strings.Split(pts[1], ";")
 
-	args := map[string]string{}
-	envs := map[string]string{}
+		args := map[string]string{}
+		envs := map[string]string{}
 
-	for _, argDef := range argDefs {
-		kv := strings.SplitN(argDef, "=", 2)
-		if kv[0] == "env" {
-			kv = strings.SplitN(kv[1], "=", 2)
-			envs[kv[0]] = kv[1]
-		} else {
-			args[kv[0]] = kv[1]
+		for _, argDef := range argDefs {
+			kv := strings.SplitN(argDef, "=", 2)
+			if kv[0] == "env" {
+				kv = strings.SplitN(kv[1], "=", 2)
+				envs[kv[0]] = kv[1]
+			} else {
+				args[kv[0]] = kv[1]
+			}
 		}
-	}
 
-	info = &DockerContainerInfo{}
+		info = &DockerContainerInfo{}
 
-	// user=selmaproject;repo=uc0:latest;gpu=true;port=6677;env=RABBITMQ_HOST=rabbitmq.abc.com;/to-be-continued/abc
-	info.image = fmt.Sprintf("%s/%s", args["user"], args["image"])
+		// user=selmaproject;repo=uc0:latest;gpu=true;port=6677;env=RABBITMQ_HOST=rabbitmq.abc.com;/to-be-continued/abc
+		info.image = fmt.Sprintf("%s/%s", args["user"], args["image"])
 
-	gpu := strings.ToLower(args["gpu"])
-	if len(gpu) > 0 && (gpu == "true" || gpu == "1" || gpu == "t" || gpu == "yes" || gpu == "y") {
-		info.gpu = true
-	}
+		gpu := strings.ToLower(args["gpu"])
+		if len(gpu) > 0 && (gpu == "true" || gpu == "1" || gpu == "t" || gpu == "yes" || gpu == "y") {
+			info.gpu = true
+		}
 
-	info.port, err = strconv.Atoi(args["port"])
+		info.port, err = strconv.Atoi(args["port"])
 
-	info.envs = envs
-	info.Type = args["type"]
+		info.envs = envs
+		info.Type = args["type"]
 
-	pathRewrite = "/"
+		pathRewrite = "/"
 
-	if len(pathParts) > 2 {
-		pathRewrite += pathParts[2]
+		if len(pathParts) > 2 {
+			pathRewrite += pathParts[2]
+		}
+
+	} else if strings.HasPrefix(path, "/x:") || strings.HasPrefix(path, "/y:") {
+
+		// path string) (pathRewrite string, info *DockerContainerInfo, err error) {
+		// path string) (pathRewrite string, yType bool, info *DockerContainerInfo, err error) {
+
+		// example:
+		// http://194.8.1.235:8888/x-selmaproject-tts-777-5002/
+		// selmaproject/tts:777 with external port 8765
+
+		yType := false
+
+		if strings.HasPrefix(path, "/y:") {
+			yType = true
+		}
+
+		pathParts := strings.SplitN(path, "/", 3)
+
+		// assert pathParts[0] == "" // not absolute path
+
+		ps := strings.SplitN(pathParts[1], ":", 6)
+
+		// /x:registry:repo:tag:port/...
+		if len(ps) < 5 {
+			err = fmt.Errorf("parse-url-path: invalid dynamic run request")
+			return
+		}
+
+		envs := map[string]string{}
+
+		if len(ps) == 6 {
+			envDefs := strings.Split(ps[5], ";")
+			for _, envDef := range envDefs {
+				kv := strings.SplitN(envDef, "=", 2)
+				envs[kv[0]] = kv[1]
+			}
+		}
+
+		image := fmt.Sprintf("%s/%s:%s", ps[1], ps[2], ps[3])
+
+		info = &DockerContainerInfo{}
+
+		info.image = image
+
+		// gpu := strings.ToLower(args["gpu"])
+		// if len(gpu) > 0 && (gpu == "true" || gpu == "1" || gpu == "t" || gpu == "yes" || gpu == "y") {
+		// 	info.gpu = true
+		// }
+
+		info.port, err = strconv.Atoi(ps[4])
+
+		info.envs = envs
+
+		if yType {
+			info.Type = "y"
+			// } else {
+			// 	info.Type = "x"
+		}
+
+		pathRewrite = "/"
+
+		if len(pathParts) > 2 {
+			pathRewrite += pathParts[2]
+		}
 	}
 
 	return
