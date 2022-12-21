@@ -39,7 +39,7 @@ func (h *HTTPBrokerMonitorHandler) RespondsAtLevel(logger *ProxyLogger, request 
 }
 
 type HTTPBrokerMonitorResponse struct {
-	bytes.Buffer
+	b bytes.Buffer // NOTE: if Buffer is exposed, then anyone, who type casts it to bytes.Buffer will avoid our custom Read/Write methods
 	// headers http.Header
 	immutable bool
 }
@@ -48,11 +48,16 @@ func (r *HTTPBrokerMonitorResponse) Close() error {
 	return nil
 }
 
+func (r *HTTPBrokerMonitorResponse) Read(buff []byte) (n int, err error) {
+	n, err = r.b.Read(buff)
+	return
+}
+
 func (r *HTTPBrokerMonitorResponse) Write(buff []byte) (n int, err error) {
 	if r.immutable {
 		return len(buff), nil // simulate everything ok
 	}
-	return r.Buffer.Write(buff)
+	return r.b.Write(buff)
 }
 
 func (h *HTTPBrokerMonitorHandler) ProcessRequest(
@@ -113,7 +118,7 @@ func (h *HTTPBrokerMonitorHandler) ProcessResponse(logger *ProxyLogger, response
 	log := logger.WithExtension(": monitor-broker: process-response")
 	// fmt := log.E
 
-	log.Trace("got response from docker:", response)
+	log.Trace("got response:", response)
 
 	return
 }
