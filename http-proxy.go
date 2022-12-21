@@ -418,3 +418,21 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 
 	return
 }
+
+type HTTPCORSInjector struct {
+}
+
+func (h *HTTPCORSInjector) ProcessResponse(logger *ProxyLogger, response *ParsedHTTPResponse) (err error) {
+
+	// log := logger.WithExtension(": http-cors-inject")
+	// fmt := log.E
+
+	// CORS
+	response.Headers.Set("Access-Control-Request-Headers", "Content-Type")
+	response.Headers.Set("Access-Control-Allow-Headers", "Content-Type")
+	response.Headers.Set("Access-Control-Allow-Origin", "*")
+	response.Headers.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+	response.Headers.Set("Access-Control-Allow-Credentials", "true")
+
+	return
+}
