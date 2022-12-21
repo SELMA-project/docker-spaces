@@ -192,7 +192,7 @@ func (p *HTTPProxy) TransferChunkForward() (err error) {
 			p.requestHandlerLogger.SetTarget("", false)
 			target = nil
 
-			log.Trace("got request:", request.Short())
+			log.Trace("got request:", request.Short(), "referrer:", request.Headers.Get("Referrer"))
 
 			// try handlers
 			level := -1
@@ -219,19 +219,6 @@ func (p *HTTPProxy) TransferChunkForward() (err error) {
 					p.handler = handler
 					p.requestHandlerLogger.SetTarget(targetID, false)
 					p.responseHandlerLogger.SetTarget(targetID, true)
-				}
-			}
-
-			// TODO: remove this after all handlers will implement complete RespondsAtLevel
-			if target == nil {
-				for _, handler := range p.handlers {
-					target, targetID, err = handler.ProcessRequest(p.requestHandlerLogger, request, p.target, p.targetID)
-					if err == nil && target != nil {
-						p.handler = handler
-						p.requestHandlerLogger.SetTarget(targetID, false)
-						p.responseHandlerLogger.SetTarget(targetID, true)
-						break
-					}
 				}
 			}
 
