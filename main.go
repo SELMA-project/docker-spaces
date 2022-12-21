@@ -264,6 +264,10 @@ func main() {
 		&HTTPRootHostHandler{ID: instanceID, Target: rootURL},
 	)
 
+	if enableCORS {
+		httpProxyConfiguration.ResponsePostProcessor = &HTTPCORSInjector{}
+	}
+
 	connectionCounter := 0
 
 	for {

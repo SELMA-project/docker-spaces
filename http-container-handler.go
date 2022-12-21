@@ -280,13 +280,6 @@ func (h *HTTPContainerHandler) ProcessResponse(logger *ProxyLogger, response *Pa
 	log := logger.WithExtension(": container-handler: process-response")
 	// fmt := log.E
 
-	// CORS
-	response.Headers.Add("Access-Control-Request-Headers", "Content-Type")
-	response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
-	response.Headers.Add("Access-Control-Allow-Origin", "*")
-	response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-	response.Headers.Add("Access-Control-Allow-Credentials", "true")
-
 	log.Trace("got response from container:", response)
 
 	return
