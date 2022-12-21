@@ -11,6 +11,7 @@ type HTTPHandler interface {
 	RespondsAtLevel(logger *ProxyLogger, request *ParsedHTTPRequest) int
 	ProcessRequest(logger *ProxyLogger, request *ParsedHTTPRequest, prevTargetConn io.ReadWriteCloser, prevTargetID string) (targetConn io.ReadWriteCloser, targetID string, err error)
 	ProcessResponse(logger *ProxyLogger, response *ParsedHTTPResponse) (err error)
+	ResponseTransferred(logger *ProxyLogger, request *ParsedHTTPRequest, response *ParsedHTTPResponse)
 	Closed(logger *ProxyLogger, request *ParsedHTTPRequest)
 }
 
@@ -38,6 +39,7 @@ type HTTPProxy struct {
 	requestChan           chan *ParsedHTTPRequest
 	request               *ParsedHTTPRequest
 	backwardRequest       *ParsedHTTPRequest
+	response              *ParsedHTTPResponse
 	targetID              string
 	handler               HTTPHandler
 	handlers              []HTTPHandler
@@ -349,6 +351,8 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 
 		if response != nil {
 
+			p.response = response
+
 			log.Trace("clear backward request storage, current value to be cleared:", p.backwardRequest.Short())
 			p.backwardRequest = nil // optional?
 
@@ -376,6 +380,15 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 		if err != nil {
 			err = fmt.Errorf("error writing to backward pipe: %w", err)
 			break
+		}
+
+		if p.backward.StartHead() {
+			// for retained handler, request and response call ResponseTransferred()
+			if p.handler != nil {
+				p.handler.ResponseTransferred(p.responseHandlerLogger, p.response.Request, p.response)
+			}
+
+			p.response = nil
 		}
 
 		// TODO: connection upgraded?

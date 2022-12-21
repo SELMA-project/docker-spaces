@@ -123,6 +123,16 @@ func (h *HTTPBrokerMonitorHandler) ProcessResponse(logger *ProxyLogger, response
 	return
 }
 
+func (h *HTTPBrokerMonitorHandler) ResponseTransferred(logger *ProxyLogger, request *ParsedHTTPRequest, response *ParsedHTTPResponse) {
+
+	log := logger.WithExtension(": monitor-broker: response-transferred")
+	// fmt := log.E
+
+	log.Trace("response transferred:", response.Short())
+
+	return
+}
+
 func (h *HTTPBrokerMonitorHandler) parseURLPath(path string) (pathRewrite string, ok bool, err error) {
 
 	// /docker:local/...

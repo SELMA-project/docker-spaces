@@ -292,6 +292,30 @@ func (h *HTTPContainerHandler) ProcessResponse(logger *ProxyLogger, response *Pa
 	return
 }
 
+func (h *HTTPContainerHandler) ResponseTransferred(logger *ProxyLogger, request *ParsedHTTPRequest, response *ParsedHTTPResponse) {
+
+	log := logger.WithExtension(": container-handler: response-transferred")
+	// fmt := log.E
+
+	log.Trace("response transferred:", response.Short())
+
+	if request == nil {
+		log.Warn("request is nil")
+		return
+	}
+
+	if request.UserData == nil {
+		log.Warn("request user data is empty")
+		return
+	}
+
+	if slot, ok := request.UserData.(*BrokerSlot); ok {
+		slot.Send(NewBrokerMessage(BrokerMessageRelease, false))
+	}
+
+	return
+}
+
 // target: http://localhost:7890/container:user=selmaproject;repo=uc0:latest;gpu=true;port=6677;env=RABBITMQ_HOST=rabbitmq.abc.com;/to-be-continued/abc
 
 func (h *HTTPContainerHandler) parseURLPath(path string) (pathRewrite string, info *DockerContainerInfo, err error) {

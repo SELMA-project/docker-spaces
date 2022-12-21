@@ -507,6 +507,16 @@ func (h *HTTPRootHostHandler) ProcessResponse(logger *ProxyLogger, response *Par
 	return
 }
 
+func (h *HTTPRootHostHandler) ResponseTransferred(logger *ProxyLogger, request *ParsedHTTPRequest, response *ParsedHTTPResponse) {
+
+	log := logger.WithExtension(": root-host: response-transferred")
+	// fmt := log.E
+
+	log.Trace("response transferred:", response.Short())
+
+	return
+}
+
 /*
 func (h *HTTPRootHostHandler) parseURLPath(path string) (pathRewrite string, target string, tls bool, err error) {
 

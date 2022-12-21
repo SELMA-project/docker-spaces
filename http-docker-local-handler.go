@@ -90,6 +90,16 @@ func (h *HTTPDockerLocalHandler) ProcessResponse(logger *ProxyLogger, response *
 	return
 }
 
+func (h *HTTPDockerLocalHandler) ResponseTransferred(logger *ProxyLogger, request *ParsedHTTPRequest, response *ParsedHTTPResponse) {
+
+	log := logger.WithExtension(": docker-local: response-transferred")
+	// fmt := log.E
+
+	log.Trace("response transferred:", response.Short())
+
+	return
+}
+
 func (h *HTTPDockerLocalHandler) parseURLPath(path string) (pathRewrite string, ok bool, err error) {
 
 	// /docker:local/...

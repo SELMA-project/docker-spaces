@@ -437,6 +437,16 @@ func (h *HTTPStaticHostHandler) ProcessResponse(logger *ProxyLogger, response *P
 	return
 }
 
+func (h *HTTPStaticHostHandler) ResponseTransferred(logger *ProxyLogger, request *ParsedHTTPRequest, response *ParsedHTTPResponse) {
+
+	log := logger.WithExtension(": static-host: response-transferred")
+	// fmt := log.E
+
+	log.Trace("response transferred:", response.Short())
+
+	return
+}
+
 func (h *HTTPStaticHostHandler) parseURLPath(path string) (pathRewrite string, target string, tls bool, err error) {
 
 	prefix, target, pathRewrite := h.splitURLPath(path)
