@@ -15,16 +15,21 @@ type HTTPHandler interface {
 	Closed(logger *ProxyLogger, request *ParsedHTTPRequest)
 }
 
+type HTTPResponseProcessor interface {
+	ProcessResponse(logger *ProxyLogger, response *ParsedHTTPResponse) (err error)
+}
+
 type HTTPProxyConfiguration struct {
-	Handlers []HTTPHandler
+	Handlers              []HTTPHandler
+	ResponsePostProcessor HTTPResponseProcessor
 }
 
 func NewHTTPProxyConfiguration(handlers ...HTTPHandler) *HTTPProxyConfiguration {
-	return &HTTPProxyConfiguration{handlers}
+	return &HTTPProxyConfiguration{handlers, nil}
 }
 
 func (c *HTTPProxyConfiguration) NewProxy(logger *ProxyLogger, source io.ReadWriter, sourceInfo *ProxyConnInfo) ReverseProxy {
-	return NewHTTPProxy(logger, source, sourceInfo, c.Handlers)
+	return NewHTTPProxy(logger, source, sourceInfo, c.Handlers, c.ResponsePostProcessor)
 }
 
 type HTTPProxy struct {
@@ -44,9 +49,10 @@ type HTTPProxy struct {
 	handler               HTTPHandler
 	handlers              []HTTPHandler
 	initialParseDone      bool
+	responsePostProcessor HTTPResponseProcessor
 }
 
-func NewHTTPProxy(logger *ProxyLogger, source io.ReadWriter, sourceInfo *ProxyConnInfo, handlers []HTTPHandler) *HTTPProxy {
+func NewHTTPProxy(logger *ProxyLogger, source io.ReadWriter, sourceInfo *ProxyConnInfo, handlers []HTTPHandler, responsePostProcessor HTTPResponseProcessor) *HTTPProxy {
 
 	log := logger.Derive().SetPrefix("http-proxy")
 
@@ -63,6 +69,7 @@ func NewHTTPProxy(logger *ProxyLogger, source io.ReadWriter, sourceInfo *ProxyCo
 		requestChan:           make(chan *ParsedHTTPRequest, 3),
 		handler:               nil,
 		handlers:              handlers,
+		responsePostProcessor: responsePostProcessor,
 	}
 }
 
@@ -363,6 +370,14 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 			if err != nil {
 				err = fmt.Errorf("error processing backward pipe response: %w", err)
 				return
+			}
+
+			if p.responsePostProcessor != nil {
+				err = p.responsePostProcessor.ProcessResponse(p.responseHandlerLogger, response)
+				if err != nil {
+					err = fmt.Errorf("error post processing backward pipe response: %w", err)
+					return
+				}
 			}
 
 			if response.StatusCode == 101 {
