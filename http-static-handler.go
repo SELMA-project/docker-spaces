@@ -249,24 +249,47 @@ func (h *HTTPStaticHostHandler) ProcessRequest(
 	// log.Trace("resolved after cookie cleanup:", "\n"+httpHeadersToString(request.Headers, "> "))
 
 	proxyHost := request.Headers.Get("Host") // host:port
-	if !strings.HasPrefix(proxyHost, "http:") && !strings.HasPrefix(proxyHost, "https:") {
+	h.proxyHost, err = parseURL(proxyHost)
+	log.Tracef("parsed proxy host %s to: %#v", proxyHost, h.proxyHost)
+	if err != nil {
+		err = fmt.Errorf("unable to parse Host header: %w", err)
+	} else {
 		if sourceInfo, ok := request.ConnectionInfo.(*ProxyConnInfo); ok {
 			if sourceInfo.TLS {
-				proxyHost = "https://" + proxyHost
+				h.proxyHost.Scheme = "https"
+				// proxyHost = "https://" + proxyHost
 			} else {
-				proxyHost = "http://" + proxyHost
+				h.proxyHost.Scheme = "http"
+				// proxyHost = "http://" + proxyHost
 			}
 		} else {
 			log.Warn("unable to decode request connection info: %+v", request.ConnectionInfo)
-			proxyHost = "http://" + proxyHost
+			// proxyHost = "http://" + proxyHost
 		}
+		proxyHost = h.proxyHost.String()
 	}
+	/*
+		if !strings.HasPrefix(proxyHost, "http:") && !strings.HasPrefix(proxyHost, "https:") {
+			if sourceInfo, ok := request.ConnectionInfo.(*ProxyConnInfo); ok {
+				if sourceInfo.TLS {
+					proxyHost = "https://" + proxyHost
+				} else {
+					proxyHost = "http://" + proxyHost
+				}
+			} else {
+				log.Warn("unable to decode request connection info: %+v", request.ConnectionInfo)
+				proxyHost = "http://" + proxyHost
+			}
+		}
+		log.Trace("proxy host:", proxyHost)
+		// if len(proxyHost) > 0 {
+		h.proxyHost, err = url.Parse(proxyHost)
+		if err != nil {
+			err = fmt.Errorf("unable to parse Host header: %w", err)
+		}
+	*/
 	log.Trace("proxy host:", proxyHost)
-	// if len(proxyHost) > 0 {
-	h.proxyHost, err = url.Parse(proxyHost)
-	if err != nil {
-		err = fmt.Errorf("unable to parse Host header: %w", err)
-	}
+
 	// }
 	// h.proxyHost = request.Headers.Get("Host")
 	// targetHost := strings.SplitN(info, ":", 2)[0]

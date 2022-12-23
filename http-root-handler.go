@@ -36,6 +36,15 @@ func (h *HTTPRootHostHandler) resolveByReferrer(logger *ProxyLogger, request *Pa
 		return
 	}
 
+	ref, err := parseURL(referrer)
+	if err != nil {
+		return
+	}
+
+	if ref.Path != "" && ref.Path != "/" {
+		return
+	}
+
 	targetAddress = h.Target.Host
 	secure = h.Target.Scheme == "https"
 
@@ -124,6 +133,7 @@ func (h *HTTPRootHostHandler) processRequestHead(logger *ProxyLogger, request *P
 		// try with referer header
 		referrer := request.Headers.Get("Referer")
 
+		// check if referrer is root /
 		targetAddress, secure, err = h.resolveByReferrer(logger, request, referrer)
 
 		log.Tracef("process-request-head: resolve by referrer %s got error: %v", referrer, err)
@@ -495,9 +505,10 @@ func (h *HTTPRootHostHandler) ProcessResponse(logger *ProxyLogger, response *Par
 			}
 		}
 
-		if len(u.Path) == 0 {
-			u.Path = "/"
-		}
+		// if len(u.Path) == 0 {
+		// 	u.Path = "/"
+		// }
+		u.Path = "/"
 		// TODO: nested hosts?
 		u.Path = fmt.Sprintf("http%s:%s%s", secure, request.Headers.Get("Host"), u.Path)
 
