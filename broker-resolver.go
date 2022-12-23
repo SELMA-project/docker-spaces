@@ -60,6 +60,7 @@ type DockerContainerInfo struct {
 	gpu   bool
 	envs  map[string]string
 	Type  string
+	tls   bool
 }
 
 func brokerTargetResolverParseURLPath(path string) (pathRewrite string, yType bool, info *DockerContainerInfo, err error) {

@@ -11,8 +11,9 @@ import (
 )
 
 type HTTPContainerHandler struct {
-	broker *Broker
-	ID     string
+	broker    *Broker
+	ID        string
+	proxyHost *url.URL
 }
 
 func (h *HTTPContainerHandler) String() string {
@@ -162,6 +163,10 @@ func (h *HTTPContainerHandler) RespondsAtLevel(logger *ProxyLogger, request *Par
 		return level
 	}
 
+	if err != nil {
+		log.Tracef("responds-at-level: error: %v", err)
+	}
+
 	return -1
 }
 
@@ -205,6 +210,30 @@ func (h *HTTPContainerHandler) ProcessRequest(
 	}
 
 	log.Trace("request path is now:", request.Path)
+
+	proxyHost := request.Headers.Get("Host") // host:port
+	h.proxyHost, err = parseURL(proxyHost)
+	log.Tracef("parsed proxy host %s to: %#v", proxyHost, h.proxyHost)
+	if err != nil {
+		err = fmt.Errorf("unable to parse Host header: %w", err)
+	} else {
+		if sourceInfo, ok := request.ConnectionInfo.(*ProxyConnInfo); ok {
+			if sourceInfo.TLS {
+				h.proxyHost.Scheme = "https"
+				// proxyHost = "https://" + proxyHost
+			} else {
+				h.proxyHost.Scheme = "http"
+				// proxyHost = "http://" + proxyHost
+			}
+		} else {
+			log.Warn("unable to decode request connection info: %+v", request.ConnectionInfo)
+			// proxyHost = "http://" + proxyHost
+		}
+		proxyHost = h.proxyHost.String()
+	}
+	log.Trace("proxy host:", proxyHost)
+
+	/// -------
 
 	yType = containerInfo.Type == "y"
 
@@ -250,9 +279,23 @@ func (h *HTTPContainerHandler) ProcessRequest(
 		return
 	}
 
+	// add default port to remote address if missing
+	if len(strings.SplitN(remoteAddress, ":", 2)) < 2 {
+		if containerInfo.tls {
+			remoteAddress += ":443"
+		} else {
+			remoteAddress += ":80"
+		}
+	}
+
 	targetAddress = remoteAddress
 
 	targetID = remoteAddress
+
+	targetURL, err := parseURL(remoteAddress)
+	if err == nil {
+		request.Headers.Set("Host", targetURL.Host) // set host to target
+	}
 
 	if prevTargetID == targetID && prevTargetConn != nil {
 		targetConn = prevTargetConn
@@ -272,6 +315,67 @@ func (h *HTTPContainerHandler) ProcessRequest(
 		}
 	}
 
+	// remove proxy cookie
+	if cookiesets, present := request.Headers["Cookie"]; present {
+		for i, cookieset := range cookiesets {
+			cookies := strings.Split(cookieset, "; ")
+			for j, cookie := range cookies {
+				if strings.HasPrefix(cookie, "Reverse-Proxy-Host-"+h.ID+"=") {
+					cookies = append(cookies[:j], cookies[j+1:]...)
+					cookiesets[i] = strings.Join(cookies, "; ")
+					break
+				}
+			}
+		}
+	}
+
+	// fix referrer
+	if true {
+		var ref *url.URL
+		referer := request.Headers.Get("Referer")
+		if len(referer) > 0 {
+			log.Info("REFERER", referer)
+			ref, _ = url.Parse(referer)
+			log.Info("PARSED REFERER", ref)
+			log.Info("HOST", request.Headers.Get("Host"), "==", ref.Host)
+
+			// TODO: in case of host:port, the parse will fill .Scheme and .Opaque
+			// this checks for /path case when Host is empty or if the request is for the same host
+			if ref != nil /* && (len(ref.Host) == 0 || ref.Host == request.Headers.Get("Host")) */ {
+				log.Info("UPDATING REFERER")
+				ref.Path, _, err = h.parseURLPath(ref.Path)
+				if err != nil {
+					log.Errorf("error parsing referer path: %v", err)
+				} else {
+					log.Info("referrer:", ref.Path)
+				}
+				ref.Host = request.Headers.Get("Host")
+
+				// prefix, target, targetPath := h.splitURLPath(ref.Path)
+				// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, targetPath)}}, "")
+
+				// prefix, target, _ /*targetPath*/ := h.splitURLPath(ref.Path)
+				// targetConn, err = HTTPBufferResponse("307 Temporary Redirect", http.Header{"Location": []string{fmt.Sprintf("/%s:%s%s", prefix, target, request.Path)}}, "")
+				// targetID = "redirect" // TODO: add random id or location hash so it won't match, is it necessary?
+				// return
+
+				request.Headers.Set("Referer", ref.String())
+			}
+		}
+	}
+	if true {
+		var ref *url.URL
+		origin := request.Headers.Get("Origin")
+		if len(origin) > 0 {
+			ref, _ = url.Parse(origin)
+
+			if ref != nil /* && (len(ref.Host) == 0 || ref.Host == request.Headers.Get("Host")) */ {
+				ref.Host = request.Headers.Get("Host")
+				request.Headers.Set("Origin", ref.String())
+			}
+		}
+	}
+
 	return
 }
 
@@ -280,7 +384,101 @@ func (h *HTTPContainerHandler) ProcessResponse(logger *ProxyLogger, response *Pa
 	log := logger.WithExtension(": container-handler: process-response")
 	// fmt := log.E
 
+	defer func() {
+		log.Debug("forwarding response to caller:", response)
+	}()
+
 	log.Trace("got response from container:", response)
+
+	// modify set-cookie headers to remove domain
+	if setCookies, present := response.Headers["Set-Cookie"]; present {
+		for i, setCookie := range setCookies {
+			// name, value, attrs, unparsed := parseSetCookieHeader(setCookie)
+			// TODO: check name
+			_, _, _, unparsed := parseSetCookieHeader(setCookie)
+			for j, attrval := range unparsed {
+				// remove domain attr
+				// TODO: copy domain attr, in case the app tries to access it's original backend, e.g., like google.com tries to store the consent
+				if strings.HasPrefix(strings.ToLower(attrval), "domain=") {
+					unparsed = append(unparsed[:j], unparsed[j+1:]...)
+					break
+				}
+			}
+			setCookies[i] = strings.Join(unparsed, "; ")
+		}
+	}
+
+	request := response.Request
+
+	basePath := ""
+	rewritePath, _, err := h.parseURLPath(request.Original.Path)
+	if err == nil {
+		index := strings.Index(request.Original.Path, rewritePath)
+		if index != -1 {
+			basePath = request.Original.Path[:index]
+		}
+	}
+
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		// redirect to target host url, e.g., --> http://www.google.com
+		// rewrite to --> proxyhost/http[s]:targethost/target/host/path
+		location := response.Headers.Get("Location")
+		if len(location) > 0 {
+			u, err := url.Parse(location)
+			if err != nil {
+				log.Debug("warning, unable to parse Location header value:", err)
+			} else if len(u.Host) > 0 {
+				// log.Debug("rewrite redirect from", location, "to proxy host", h.proxyHost)
+				// log.Trace("response location rewrite: before", u.String(), ";", u)
+				// targetHost := u.Host
+				// secure := ""
+				// if u.Scheme == "https" {
+				// 	secure = "s"
+				// }
+				// u.Host = h.proxyHost
+				u.Host = h.proxyHost.Host
+				u.Scheme = h.proxyHost.Scheme
+				if len(u.Path) == 0 {
+					u.Path = "/"
+				}
+				// u.Path = fmt.Sprintf("http%s:%s%s", secure, targetHost, u.Path)
+				u.Path = basePath + u.Path
+				// log.Trace("response location rewrite: after", u.String(), ";", u)
+				log.Debug("rewrite redirect location:", location, "==>", u.String())
+				// location, err = URLJoinPath(u.String(), fmt.Sprintf("%shost:%s", secure, targetHost))
+				// if err != nil {
+				// 	log.Debug("warning, unable join url path:", err)
+				// }
+				// location = path.Join(u.String(), fmt.Sprintf("host:%s", u.Host))
+				response.Headers.Set("Location", u.String())
+				// response.Headers.Set("Location", location)
+			}
+		}
+	} // else {
+	if true {
+		// TODO: check if redirect to the same remote host
+		// TODO: set cookie specific to this host/path, set path as /
+		var u url.URL
+		u.Host = h.proxyHost.Host
+		u.Scheme = h.proxyHost.Scheme
+		// TODO: determine if it's host or shost, i.e., to use TLS for the target connection
+
+		// secure := ""
+		// if info, ok := request.UserData.(*DockerContainerInfo); ok {
+		// 	if info.tls {
+		// 		secure = "s"
+		// 	}
+		// }
+
+		if len(u.Path) == 0 {
+			u.Path = "/"
+		}
+		// TODO: nested hosts?
+		// u.Path = fmt.Sprintf("http%s:%s%s", secure, request.Headers.Get("Host"), u.Path)
+		u.Path = basePath + u.Path
+
+		response.Headers.Add("Set-Cookie", "Reverse-Proxy-Host-"+h.ID+"="+u.String()+"; path=/")
+	}
 
 	return
 }
@@ -310,6 +508,25 @@ func (h *HTTPContainerHandler) ResponseTransferred(logger *ProxyLogger, request 
 }
 
 // target: http://localhost:7890/container:user=selmaproject;repo=uc0:latest;gpu=true;port=6677;env=RABBITMQ_HOST=rabbitmq.abc.com;/to-be-continued/abc
+
+func (h *HTTPContainerHandler) parseBool(value string, defaultValue bool) (result bool, err error) {
+	v := strings.ToLower(value)
+	if len(v) > 0 {
+		if v == "true" || v == "1" || v == "t" || v == "yes" || v == "y" {
+			result = true
+			return
+		}
+		if v == "false" || v == "0" || v == "f" || v == "no" || v == "n" {
+			result = false
+			return
+		}
+	} else {
+		result = defaultValue
+		return
+	}
+	err = fmt.Errorf("parse-bool: invalid value")
+	return
+}
 
 func (h *HTTPContainerHandler) parseURLPath(path string) (pathRewrite string, info *DockerContainerInfo, err error) {
 
@@ -344,14 +561,24 @@ func (h *HTTPContainerHandler) parseURLPath(path string) (pathRewrite string, in
 		info.image = fmt.Sprintf("%s/%s", args["user"], args["image"])
 
 		gpu := strings.ToLower(args["gpu"])
-		if len(gpu) > 0 && (gpu == "true" || gpu == "1" || gpu == "t" || gpu == "yes" || gpu == "y") {
-			info.gpu = true
+		info.gpu, err = h.parseBool(gpu, false)
+		if err != nil {
+			err = fmt.Errorf("parse-url-path: error parsing gpu value: %w", err)
+			info = nil
+			return
 		}
 
 		info.port, err = strconv.Atoi(args["port"])
 
 		info.envs = envs
 		info.Type = args["type"]
+
+		info.tls, err = h.parseBool(strings.ToLower(args["tls"]), false)
+		if err != nil {
+			err = fmt.Errorf("parse-url-path: error parsing tls value: %w", err)
+			info = nil
+			return
+		}
 
 		pathRewrite = "/"
 
