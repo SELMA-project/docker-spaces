@@ -38,7 +38,7 @@ func main() {
 	var registryEmail string
 	var enableCORS bool
 	var startPort int = 9100
-	var sourceSlots int = 3
+	var sourceSlots int = 15
 	var targetSlots int = 5
 	var sleepMS int = 2000
 	var clusterDefs stringFlags
