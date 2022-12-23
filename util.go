@@ -39,14 +39,10 @@ func parseURL(URL string) (u *url.URL, err error) {
 		// assume missing http[s] scheme by port
 		host := strings.SplitN(URL, "/", 2)[0]
 		hostPort := strings.SplitN(host, ":", 2)
-		if len(hostPort) == 2 {
-			if hostPort[1] == "80" {
-				URL = "http://" + URL
-			} else if hostPort[1] == "443" {
-				URL = "https://" + URL
-			}
+		if len(hostPort) == 2 && hostPort[1] == "443" {
+			URL = "https://" + URL
 		} else {
-			URL = "http://" + URL
+			URL = "http://" + URL // default to http
 		}
 	}
 	u, err = url.Parse(URL)
