@@ -60,7 +60,7 @@ The REST API call must be triggered by external code upon sensing a non-empty Ra
 
 # Experimental
 
-* Experimental DockerSpaces-NG version supporting complete frontend pipelines is available as docker image. This docker images besides DockerSpaces includes also a web-server (PiniTree server) from where the initial frontend webpage is loaded.
+Experimental DockerSpaces-NG version supporting complete frontend pipelines is available as docker image. This docker image besides DockerSpaces includes also a web-server (PiniTree server) from where the initial frontend webpage is loaded.
 
 To test, run:
 
