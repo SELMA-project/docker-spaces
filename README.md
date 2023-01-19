@@ -70,4 +70,4 @@ docker run --restart=always -d -v /var/run/docker.sock:/var/run/docker.sock -p 1
 and then go to URL http://localhost:12555
 The frontend pipeline there is demonstrated via WHISPER button (other buttons still use a shared backend container)
 
-Note: "docker update --restart=always <container-id>" can be applied also on an already running container, to make it restart automatically on re-boot. This closely simulates a virtual machine with permanet storage.
+Note: "docker update --restart=always container-id" can be applied also on an already running container, to make it restart automatically on re-boot. This closely simulates a virtual machine with permanet storage.
