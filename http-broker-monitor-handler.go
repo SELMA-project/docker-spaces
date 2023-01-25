@@ -29,7 +29,7 @@ func (h *HTTPBrokerMonitorHandler) RespondsAtLevel(logger *ProxyLogger, request 
 
 	// log := logger.WithExtension(": monitor-broker: responds")
 
-	_, ok, err := h.parseURLPath(request.Path)
+	_, ok, _, err := h.parseURLPath(request.Path)
 	if err != nil || !ok {
 		return -1
 		// return false
@@ -74,11 +74,12 @@ func (h *HTTPBrokerMonitorHandler) ProcessRequest(
 	}
 
 	ok := false
+	history := false
 
 	log.Debug("got HTTP request:", request)
 
 	// parse url
-	request.Path, ok, err = h.parseURLPath(request.Path)
+	request.Path, ok, history, err = h.parseURLPath(request.Path)
 	if !ok {
 		if err != nil {
 			err = fmt.Errorf("invalid path: %w", err)
@@ -94,8 +95,12 @@ func (h *HTTPBrokerMonitorHandler) ProcessRequest(
 	content := &bytes.Buffer{}
 
 	// content.Write([]byte("broker state:\n"))
-	h.broker.State = h.broker.JSON()
-	content.Write(h.broker.State)
+	if history {
+		content.Write(h.broker.HistoryJSON())
+	} else {
+		h.broker.State = h.broker.JSON()
+		content.Write(h.broker.State)
+	}
 
 	headers.Add("Content-Length", strconv.Itoa(content.Len()))
 	headers.Add("Content-Type", "application/json")
@@ -133,15 +138,19 @@ func (h *HTTPBrokerMonitorHandler) ResponseTransferred(logger *ProxyLogger, requ
 	return
 }
 
-func (h *HTTPBrokerMonitorHandler) parseURLPath(path string) (pathRewrite string, ok bool, err error) {
+func (h *HTTPBrokerMonitorHandler) parseURLPath(path string) (pathRewrite string, ok bool, history bool, err error) {
 
 	// /docker:local/...
 
 	pathRewrite = path // defaults to same path, alternative default: return empty string if no rewrite happens
 
-	if !strings.HasPrefix(path, "/monitor:broker/") && path != "/monitor:broker" {
+	if !strings.HasPrefix(path, "/monitor:broker/") && path != "/monitor:broker" && !strings.HasPrefix(path, "/monitor:history/") && path != "/monitor:history" {
 		// err = fmt.Errorf("parse-url-path: not an error, skipping request")
 		return
+	}
+
+	if strings.HasPrefix(path, "/monitor:history/") || path == "/monitor:history" {
+		history = true
 	}
 
 	ok = true

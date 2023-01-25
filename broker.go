@@ -120,7 +120,8 @@ type BrokerSlot struct {
 	refInfo any // remoteAddress instance info, reference info
 
 	// oppositeIndex int // TODO: oppositeSlot -> *BrokerSlot
-	oppositeSlot *BrokerSlot
+	oppositeSlot      *BrokerSlot
+	oppositeSlotIndex int
 }
 
 func (s *BrokerSlot) JSON() any {
@@ -133,10 +134,14 @@ func (s *BrokerSlot) JSON() any {
 	}{s.state.String(), s.since, s.slotType, s.runInfo, s.refInfo}
 }
 
+func (s *BrokerSlot) String() string {
+	return fmt.Sprintf("BrokerSlot{%s, since: %d, type: %s, run-info: %#v, ref-info: %#v, op-slot: %d}", s.state, s.since, s.slotType, s.runInfo, s.refInfo, s.oppositeSlotIndex)
+}
+
 // func newBrokerSlot(index, size int /* size = 3 */) *BrokerSlot {
 func newBrokerSlot(size int /* size = 3 */) *BrokerSlot {
 	// return &BrokerSlot{input: make(chan *BrokerMessage, size), output: make(chan *BrokerMessage, size) /* state: BrokerSlotState{}, */, index: index}
-	return &BrokerSlot{input: make(chan *BrokerMessage, size), output: make(chan *BrokerMessage, size) /* state: BrokerSlotState{}, */}
+	return &BrokerSlot{input: make(chan *BrokerMessage, size), output: make(chan *BrokerMessage, size) /* state: BrokerSlotState{}, */, oppositeSlotIndex: -1}
 }
 
 // broker internal API
@@ -164,6 +169,29 @@ func (s *BrokerSlot) Read() *BrokerMessage {
 	return <-s.output
 }
 
+type BrokerMessageJSON struct {
+	Type    string `json:"type"`
+	Payload any    `json:"payload"`
+}
+
+type BrokerMessageDirection int
+
+const (
+	BrokerMessageDirectionSend BrokerMessageDirection = iota
+	BrokerMessageDirectionRead
+)
+
+func (s BrokerMessageDirection) String() string {
+	return [...]string{"broker -->", "broker <--"}[s]
+}
+
+type BrokerLogEntry struct {
+	Message   BrokerMessageJSON `json:"message"`
+	Timestamp int64             `json:"timestamp"`
+	Direction string            `json:"direction"`
+	Slot      any               `json:"slot"`
+}
+
 type Broker struct {
 	freeSourceSlots chan *BrokerSlot
 	freeTargetSlots chan *BrokerSlot
@@ -178,6 +206,12 @@ type Broker struct {
 	ReleaseTimeout int // in seconds
 
 	State []byte
+
+	log []*BrokerLogEntry
+}
+
+func (b *Broker) AddLogEntry(message *BrokerMessage, slot *BrokerSlot, origin string, direction BrokerMessageDirection) {
+	b.log = append(b.log, &BrokerLogEntry{BrokerMessageJSON{message.t.String(), message.payload}, time.Now().Unix(), direction.String() + " " + origin, slot.JSON()})
 }
 
 func (b *Broker) JSON() []byte {
@@ -207,6 +241,14 @@ func (b *Broker) JSON() []byte {
 	data, err := json.MarshalIndent(s, "  ", "  ")
 	if err != nil {
 		log.Error("unable to marshal broker to JSON: %v", err)
+	}
+	return data
+}
+
+func (b *Broker) HistoryJSON() []byte {
+	data, err := json.MarshalIndent(b.log, "  ", "  ")
+	if err != nil {
+		log.Error("unable to marshal broker history to JSON: %v", err)
 	}
 	return data
 }
@@ -278,6 +320,7 @@ func (b *Broker) Run() {
 
 			message := sourceSlot.read()
 			log.Tracef("broker: got %s message: %s", b.SourceName, message)
+			b.AddLogEntry(message, sourceSlot, b.SourceName, BrokerMessageDirectionRead)
 
 			switch message.Type() {
 			case BrokerMessageRelease:
@@ -316,6 +359,7 @@ func (b *Broker) Run() {
 				sourceSlot.since = now
 				sourceSlot.state = BrokerSlotStateWait
 				sourceSlot.oppositeSlot = nil
+				sourceSlot.oppositeSlotIndex = -1
 
 				// TODO: check for empty image string
 				// TODO: what to do if empty image is passed
@@ -360,6 +404,7 @@ func (b *Broker) Run() {
 
 			message := targetSlot.read()
 			log.Tracef("broker: got %s message: %s", b.TargetName, message)
+			b.AddLogEntry(message, targetSlot, b.TargetName, BrokerMessageDirectionRead)
 
 			switch message.Type() {
 			case BrokerMessageStarted:
@@ -380,7 +425,10 @@ func (b *Broker) Run() {
 					if sourceSlot.state == BrokerSlotStateWait && sourceSlot.slotType == targetSlot.slotType {
 						sourceSlot.state = BrokerSlotStateFree
 						b.freeSourceSlots <- sourceSlot
-						sourceSlot.send(NewBrokerMessage(BrokerMessageError, message.PayloadString()))
+						// sourceSlot.send(NewBrokerMessage(BrokerMessageError, message.PayloadString()))
+						m := NewBrokerMessage(BrokerMessageError, message.PayloadString())
+						sourceSlot.send(m)
+						b.AddLogEntry(m, sourceSlot, b.SourceName, BrokerMessageDirectionSend)
 					}
 
 				}
@@ -403,7 +451,7 @@ func (b *Broker) Run() {
 
 			if yType(sourceSlot.slotType) {
 
-				for _, targetSlot := range b.targetSlots {
+				for index, targetSlot := range b.targetSlots {
 					// if targetSlot.state == BrokerSlotStateFree && targetSlot.image == sourceSlot.image {
 					if (targetSlot.state == BrokerSlotStateFree || targetSlot.state == BrokerSlotStateRun) && targetSlot.slotType == sourceSlot.slotType {
 						// brīvs konteineris
@@ -413,15 +461,19 @@ func (b *Broker) Run() {
 						// sourceSlot.oppositeIndex = targetSlot.index
 						// targetSlot.oppositeSlot = sourceSlot
 						sourceSlot.oppositeSlot = targetSlot
+						sourceSlot.oppositeSlotIndex = index
 						sourceSlot.state = BrokerSlotStateRun
 						sourceSlot.since = now // GB
 
-						sourceSlot.send(NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo))
+						// sourceSlot.send(NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo))
+						m := NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo)
+						sourceSlot.send(m)
+						b.AddLogEntry(m, sourceSlot, b.SourceName, BrokerMessageDirectionSend)
 					}
 				}
 
 			} else {
-				for _, targetSlot := range b.targetSlots {
+				for index, targetSlot := range b.targetSlots {
 					// if targetSlot.state == BrokerSlotStateFree && targetSlot.image == sourceSlot.image {
 					if targetSlot.state == BrokerSlotStateFree && targetSlot.slotType == sourceSlot.slotType {
 						// brīvs konteineris
@@ -431,10 +483,14 @@ func (b *Broker) Run() {
 						// sourceSlot.oppositeIndex = targetSlot.index
 						// targetSlot.oppositeSlot = sourceSlot
 						sourceSlot.oppositeSlot = targetSlot
+						sourceSlot.oppositeSlotIndex = index
 						sourceSlot.state = BrokerSlotStateRun
 						sourceSlot.since = now // GB
 
-						sourceSlot.send(NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo))
+						// sourceSlot.send(NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo))
+						m := NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo)
+						sourceSlot.send(m)
+						b.AddLogEntry(m, sourceSlot, b.SourceName, BrokerMessageDirectionSend)
 					}
 				}
 			}
@@ -467,11 +523,13 @@ func (b *Broker) Run() {
 			}
 
 			var oldest *BrokerSlot
+			var oldestIndex int = -1
 
-			for _, slot := range b.targetSlots {
+			for index, slot := range b.targetSlots {
 				if slot.state == BrokerSlotStateFree {
 					if oldest == nil || oldest.since > slot.since {
 						oldest = slot
+						oldestIndex = index
 					}
 				}
 			}
@@ -496,9 +554,10 @@ func (b *Broker) Run() {
 
 				var waitingSlot *BrokerSlot
 
-				for _, slot := range b.sourceSlots {
+				for index, slot := range b.sourceSlots {
 					if slot.state == BrokerSlotStateWait && slot.slotType == mostRequestedSlotType {
 						oldest.oppositeSlot = slot
+						oldest.oppositeSlotIndex = index
 						waitingSlot = slot
 						break
 					}
@@ -512,14 +571,21 @@ func (b *Broker) Run() {
 					oldest.slotType = waitingSlot.slotType
 					oldest.since = now
 					waitingSlot.oppositeSlot = oldest
+					waitingSlot.oppositeSlotIndex = oldestIndex
 
-					oldest.send(NewBrokerMessage(BrokerMessageStart, waitingSlot.runInfo))
+					// oldest.send(NewBrokerMessage(BrokerMessageStart, waitingSlot.runInfo))
+					m := NewBrokerMessage(BrokerMessageStart, waitingSlot.runInfo)
+					oldest.send(m)
+					b.AddLogEntry(m, oldest, b.TargetName, BrokerMessageDirectionSend)
 
 					// if port number is 3, then respond with error so that client connection gets terminated
 					if containerInfo, ok := waitingSlot.runInfo.(*DockerContainerInfo); ok && containerInfo.port == 3 {
 						b.freeSourceSlots <- waitingSlot
 						waitingSlot.state = BrokerSlotStateFree
-						waitingSlot.send(NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ"))
+						// waitingSlot.send(NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ"))
+						m := NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ")
+						waitingSlot.send(m)
+						b.AddLogEntry(m, waitingSlot, b.SourceName, BrokerMessageDirectionSend)
 					}
 
 					done = false
@@ -546,10 +612,12 @@ func (b *Broker) Run() {
 
 			// Find the oldest free DockerRunner slot
 			var oldestRUNNER *BrokerSlot
+			var oldestRUNNERIndex int = -1
 			oldestRUNNERtime := now
-			for _, slot := range b.targetSlots {
+			for index, slot := range b.targetSlots {
 				if slot.state == BrokerSlotStateFree && slot.since < oldestRUNNERtime {
 					oldestRUNNER = slot
+					oldestRUNNERIndex = index
 					oldestRUNNERtime = slot.since
 				}
 			}
@@ -560,13 +628,21 @@ func (b *Broker) Run() {
 				oldestRUNNER.slotType = oldestTCP.slotType
 				oldestRUNNER.since = now
 				oldestTCP.oppositeSlot = oldestRUNNER
-				oldestRUNNER.send(NewBrokerMessage(BrokerMessageStart, oldestTCP.runInfo))
+				oldestTCP.oppositeSlotIndex = oldestRUNNERIndex
+
+				// oldestRUNNER.send(NewBrokerMessage(BrokerMessageStart, oldestTCP.runInfo))
+				m := NewBrokerMessage(BrokerMessageStart, oldestTCP.runInfo)
+				oldestRUNNER.send(m)
+				b.AddLogEntry(m, oldestRUNNER, b.TargetName, BrokerMessageDirectionSend)
 
 				// if port number is 3, then respond with error so that client connection gets terminated
 				if containerInfo, ok := oldestTCP.runInfo.(*DockerContainerInfo); ok && containerInfo.port == 3 {
 					b.freeSourceSlots <- oldestTCP
 					oldestTCP.state = BrokerSlotStateFree
-					oldestTCP.send(NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ"))
+					// oldestTCP.send(NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ"))
+					m := NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ")
+					oldestTCP.send(m)
+					b.AddLogEntry(m, oldestTCP, b.SourceName, BrokerMessageDirectionSend)
 				}
 
 				done = false
