@@ -410,12 +410,27 @@ func (h *HTTPContainerHandler) ProcessResponse(logger *ProxyLogger, response *Pa
 
 	request := response.Request
 
+	// determine base path (with handler annotation) based on request path or request referrer
 	basePath := ""
-	rewritePath, _, err := h.parseURLPath(request.Original.Path)
-	if err == nil {
-		index := strings.Index(request.Original.Path, rewritePath)
+	rewritePath, info, err := h.parseURLPath(request.Original.Path)
+	if err == nil && info != nil {
+		index := strings.LastIndex(request.Original.Path, rewritePath)
 		if index != -1 {
 			basePath = request.Original.Path[:index]
+		}
+	} else {
+		referrer := request.Original.Headers.Get("Referer")
+		if len(referrer) > 0 {
+			u, err := parseURL(referrer)
+			if err == nil && len(u.Path) > 0 {
+				rewritePath, info, err = h.parseURLPath(u.Path)
+				if err == nil && info != nil {
+					index := strings.LastIndex(referrer, rewritePath)
+					if index != -1 {
+						basePath = referrer[:index]
+					}
+				}
+			}
 		}
 	}
 
@@ -452,6 +467,11 @@ func (h *HTTPContainerHandler) ProcessResponse(logger *ProxyLogger, response *Pa
 				// location = path.Join(u.String(), fmt.Sprintf("host:%s", u.Host))
 				response.Headers.Set("Location", u.String())
 				// response.Headers.Set("Location", location)
+			} else if len(u.Path) > 0 {
+				u, err := URLJoinPath(basePath, location)
+				if err == nil {
+					response.Headers.Set("Location", u)
+				}
 			}
 		}
 	} // else {

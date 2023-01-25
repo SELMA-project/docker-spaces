@@ -398,6 +398,30 @@ func (h *HTTPStaticHostHandler) ProcessResponse(logger *ProxyLogger, response *P
 
 	// log.Debug("response set-cookie after:", response.Headers["Set-Cookie"])
 
+	// determine base path (with handler annotation) based on request path or request referrer
+	basePath := ""
+	rewritePath, t, _, err := h.parseURLPath(request.Original.Path)
+	if err == nil && len(t) > 0 {
+		index := strings.LastIndex(request.Original.Path, rewritePath)
+		if index != -1 {
+			basePath = request.Original.Path[:index]
+		}
+	} else {
+		referrer := request.Original.Headers.Get("Referer")
+		if len(referrer) > 0 {
+			u, err := parseURL(referrer)
+			if err == nil && len(u.Path) > 0 {
+				rewritePath, t, _, err = h.parseURLPath(u.Path)
+				if err == nil && len(t) > 0 {
+					index := strings.LastIndex(referrer, rewritePath)
+					if index != -1 {
+						basePath = referrer[:index]
+					}
+				}
+			}
+		}
+	}
+
 	if response.StatusCode >= 300 && response.StatusCode < 400 {
 		// redirect to target host url, e.g., --> http://www.google.com
 		// rewrite to --> proxyhost/http[s]:targethost/target/host/path
@@ -430,6 +454,11 @@ func (h *HTTPStaticHostHandler) ProcessResponse(logger *ProxyLogger, response *P
 				// location = path.Join(u.String(), fmt.Sprintf("host:%s", u.Host))
 				response.Headers.Set("Location", u.String())
 				// response.Headers.Set("Location", location)
+			} else if len(u.Path) > 0 {
+				u, err := URLJoinPath(basePath, location)
+				if err == nil {
+					response.Headers.Set("Location", u)
+				}
 			}
 		}
 	} // else {
