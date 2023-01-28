@@ -113,6 +113,81 @@ func (r *DockerRunner) kill() (err error) {
 	return
 }
 
+func (r *DockerRunner) running() (running bool, err error) {
+
+	id, err := r.getContainerID()
+	if err != nil {
+		// NOTE: may still be running at this point
+		log.Error("docker-runner: running: error determining running container id:", err)
+		err = fmt.Errorf("running: error getting container id: %w", err)
+		return
+	}
+
+	if len(id) == 0 {
+		// NOTE: not running (not found int containers list)
+		log.Error("docker-runner: running: container not found")
+		err = fmt.Errorf("running: container not found")
+		return
+	}
+
+	log.Info("docker-runner: running: inspecting container", id)
+
+	response, err := r.docker.Get("/containers/"+id+"/json", nil, nil)
+	if err != nil {
+		// NOTE: maybe still running?
+		log.Error("docker-runner: running: inspect container error:", err)
+		err = fmt.Errorf("running: error inspecting container with id = %s: %w", id, err)
+		return
+	}
+	defer response.Close()
+
+	if response.StatusCode == 200 {
+		if result, ok := response.JSON.(map[string]any); ok {
+			/*
+				// state if GPU failed
+				"State": {
+					"Status": "exited",
+					"Running": false,
+					"Paused": false,
+					"Restarting": false,
+					"OOMKilled": false,
+					"Dead": false,
+					"Pid": 0,
+					"ExitCode": 1,
+					"Error": "",
+					"StartedAt": "2023-01-25T17:41:15.871855287Z",
+					"FinishedAt": "2023-01-25T17:41:24.825956498Z"
+				},
+			*/
+			if state, ok := result["State"]; ok && state != nil {
+				if state, ok := state.(map[string]any); ok {
+					if status := state["Status"]; status != nil {
+						if status, ok := status.(string); ok {
+							if status == "exited" {
+								return
+							} else {
+								running = true // TODO: starting? any other conditions to consider during waiting?
+							}
+						}
+					}
+				}
+			}
+		}
+	} else if response.StatusCode == 404 {
+		// NOTE: definitely not running (container not found)
+		log.Error("docker-runner: running: error inspect container with id = %s: container not found", id)
+		err = fmt.Errorf("running: error inspecting container with id = %s: container not found", id)
+		return
+	} else if response.StatusCode == 500 {
+		// NOTE: maybe still running?
+		log.Error("docker-runner: running: error inspect container with id = %s: server error", id)
+		err = fmt.Errorf("running: error inspecting container with id = %s: server error", id)
+		return
+	}
+
+	return
+}
+
 func (r *DockerRunner) start(image string, internalPort int, envs map[string]string) (err error) {
 
 	// check if some container is using our external port, if so - kill it
@@ -269,7 +344,7 @@ func (r *DockerRunner) start(image string, internalPort int, envs map[string]str
 	return
 }
 
-func waitForConnection(address string, sleep, timeout, readTimeout time.Duration) (err error) {
+func waitForConnection(address string, sleep, timeout, readTimeout time.Duration, alive func() bool) (err error) {
 
 	// check that docker container ir ready to accept tcp connections
 
@@ -284,6 +359,14 @@ func waitForConnection(address string, sleep, timeout, readTimeout time.Duration
 	for time.Now().Before(deadline) {
 
 		time.Sleep(sleep)
+
+		if alive != nil {
+			if !alive() {
+				err = fmt.Errorf("wait-for-connection: container is not running")
+				fmt.Println("container is not running")
+				return
+			}
+		}
 
 		fmt.Printf(".")
 
@@ -419,7 +502,13 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 
 			// wait for responding container state
 			// r.wait()
-			err = waitForConnection(remoteAddress, 1*time.Second, time.Duration(r.startTimeout)*time.Second, 1*time.Second)
+			err = waitForConnection(remoteAddress, 1*time.Second, time.Duration(r.startTimeout)*time.Second, 1*time.Second, func() bool {
+				running, err := r.running()
+				if !running || err != nil {
+					return false
+				}
+				return true
+			})
 			if err != nil {
 				log.Debug("docker-runner: run: wait for container error:", err)
 				slot.Send(NewBrokerMessage(BrokerMessageError, err.Error()))
