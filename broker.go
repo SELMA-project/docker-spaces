@@ -156,7 +156,23 @@ func newBrokerSlot(size int /* size = 3 */) *BrokerSlot {
 
 // broker internal API
 func (s *BrokerSlot) send(message *BrokerMessage) {
-	s.output <- message
+	// if len(s.output) < cap(s.output) {
+	if len(s.output) == 0 {
+		s.output <- message
+	}
+}
+
+func (s *BrokerSlot) reset() {
+	done := false
+	for !done {
+		select {
+		case <-s.output:
+			done = false
+		default:
+			done = true
+		}
+	}
+	// TODO: reset input channel?
 }
 
 // broker internal API
@@ -295,6 +311,7 @@ func NewBroker(sourceSlotCount, targetSlotCount, sleepMS, releaseTimeout int) *B
 func (b *Broker) GetSourceSlot() *BrokerSlot {
 	slot := <-b.freeSourceSlots
 	// slot.state = BrokerSlotWait
+	slot.reset()
 	return slot
 }
 
