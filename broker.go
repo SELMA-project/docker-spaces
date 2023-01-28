@@ -106,6 +106,7 @@ func (m *BrokerMessage) String() string {
 // }
 
 type BrokerSlot struct {
+	index int // for debugging
 	// broker private fields
 	input  chan *BrokerMessage // from broker's perspective
 	output chan *BrokerMessage // from broker's perspective
@@ -120,28 +121,37 @@ type BrokerSlot struct {
 	refInfo any // remoteAddress instance info, reference info
 
 	// oppositeIndex int // TODO: oppositeSlot -> *BrokerSlot
-	oppositeSlot      *BrokerSlot
-	oppositeSlotIndex int
+	oppositeSlot *BrokerSlot
 }
 
 func (s *BrokerSlot) JSON() any {
+	oppositeSlotIndex := -1
+	if s.oppositeSlot != nil {
+		oppositeSlotIndex = s.oppositeSlot.index
+	}
 	return struct {
-		State    string
-		Since    int64
-		SlotType string
-		RunInfo  any
-		RefInfo  any
-	}{s.state.String(), s.since, s.slotType, s.runInfo, s.refInfo}
+		Index             int
+		State             string
+		Since             int64
+		SlotType          string
+		RunInfo           any
+		RefInfo           any
+		OppositeSlotIndex int
+	}{s.index, s.state.String(), s.since, s.slotType, s.runInfo, s.refInfo, oppositeSlotIndex}
 }
 
 func (s *BrokerSlot) String() string {
-	return fmt.Sprintf("BrokerSlot{%s, since: %d, type: %s, run-info: %#v, ref-info: %#v, op-slot: %d}", s.state, s.since, s.slotType, s.runInfo, s.refInfo, s.oppositeSlotIndex)
+	oppositeSlotIndex := -1
+	if s.oppositeSlot != nil {
+		oppositeSlotIndex = s.oppositeSlot.index
+	}
+	return fmt.Sprintf("BrokerSlot{%s, since: %d, type: %s, run-info: %#v, ref-info: %#v, op-slot: %d}", s.state, s.since, s.slotType, s.runInfo, s.refInfo, oppositeSlotIndex)
 }
 
 // func newBrokerSlot(index, size int /* size = 3 */) *BrokerSlot {
 func newBrokerSlot(size int /* size = 3 */) *BrokerSlot {
 	// return &BrokerSlot{input: make(chan *BrokerMessage, size), output: make(chan *BrokerMessage, size) /* state: BrokerSlotState{}, */, index: index}
-	return &BrokerSlot{input: make(chan *BrokerMessage, size), output: make(chan *BrokerMessage, size) /* state: BrokerSlotState{}, */, oppositeSlotIndex: -1}
+	return &BrokerSlot{input: make(chan *BrokerMessage, size), output: make(chan *BrokerMessage, size) /* state: BrokerSlotState{}, */}
 }
 
 // broker internal API
@@ -260,12 +270,14 @@ func NewBroker(sourceSlotCount, targetSlotCount, sleepMS, releaseTimeout int) *B
 	targetSlots := make([]*BrokerSlot, targetSlotCount)
 	for i := 0; i < sourceSlotCount; i++ {
 		slot := newBrokerSlot(3)
+		slot.index = i
 		sourceSlots[i] = slot
 		freeSourceSlots <- slot
 		slot.state = BrokerSlotStateFree // GB: lai ciklos var atskirt TCPslotus, kas netiek lietoti
 	}
 	for i := 0; i < targetSlotCount; i++ {
 		slot := newBrokerSlot(3)
+		slot.index = i
 		targetSlots[i] = slot
 		freeTargetSlots <- slot
 	}
@@ -359,7 +371,6 @@ func (b *Broker) Run() {
 				sourceSlot.since = now
 				sourceSlot.state = BrokerSlotStateWait
 				sourceSlot.oppositeSlot = nil
-				sourceSlot.oppositeSlotIndex = -1
 
 				// TODO: check for empty image string
 				// TODO: what to do if empty image is passed
@@ -451,7 +462,7 @@ func (b *Broker) Run() {
 
 			if yType(sourceSlot.slotType) {
 
-				for index, targetSlot := range b.targetSlots {
+				for _, targetSlot := range b.targetSlots {
 					// if targetSlot.state == BrokerSlotStateFree && targetSlot.image == sourceSlot.image {
 					if (targetSlot.state == BrokerSlotStateFree || targetSlot.state == BrokerSlotStateRun) && targetSlot.slotType == sourceSlot.slotType {
 						// brīvs konteineris
@@ -461,7 +472,6 @@ func (b *Broker) Run() {
 						// sourceSlot.oppositeIndex = targetSlot.index
 						// targetSlot.oppositeSlot = sourceSlot
 						sourceSlot.oppositeSlot = targetSlot
-						sourceSlot.oppositeSlotIndex = index
 						sourceSlot.state = BrokerSlotStateRun
 						sourceSlot.since = now // GB
 
@@ -473,7 +483,7 @@ func (b *Broker) Run() {
 				}
 
 			} else {
-				for index, targetSlot := range b.targetSlots {
+				for _, targetSlot := range b.targetSlots {
 					// if targetSlot.state == BrokerSlotStateFree && targetSlot.image == sourceSlot.image {
 					if targetSlot.state == BrokerSlotStateFree && targetSlot.slotType == sourceSlot.slotType {
 						// brīvs konteineris
@@ -483,7 +493,6 @@ func (b *Broker) Run() {
 						// sourceSlot.oppositeIndex = targetSlot.index
 						// targetSlot.oppositeSlot = sourceSlot
 						sourceSlot.oppositeSlot = targetSlot
-						sourceSlot.oppositeSlotIndex = index
 						sourceSlot.state = BrokerSlotStateRun
 						sourceSlot.since = now // GB
 
@@ -523,13 +532,11 @@ func (b *Broker) Run() {
 			}
 
 			var oldest *BrokerSlot
-			var oldestIndex int = -1
 
-			for index, slot := range b.targetSlots {
+			for _, slot := range b.targetSlots {
 				if slot.state == BrokerSlotStateFree {
 					if oldest == nil || oldest.since > slot.since {
 						oldest = slot
-						oldestIndex = index
 					}
 				}
 			}
@@ -554,10 +561,9 @@ func (b *Broker) Run() {
 
 				var waitingSlot *BrokerSlot
 
-				for index, slot := range b.sourceSlots {
+				for _, slot := range b.sourceSlots {
 					if slot.state == BrokerSlotStateWait && slot.slotType == mostRequestedSlotType {
 						oldest.oppositeSlot = slot
-						oldest.oppositeSlotIndex = index
 						waitingSlot = slot
 						break
 					}
@@ -571,7 +577,6 @@ func (b *Broker) Run() {
 					oldest.slotType = waitingSlot.slotType
 					oldest.since = now
 					waitingSlot.oppositeSlot = oldest
-					waitingSlot.oppositeSlotIndex = oldestIndex
 
 					// oldest.send(NewBrokerMessage(BrokerMessageStart, waitingSlot.runInfo))
 					m := NewBrokerMessage(BrokerMessageStart, waitingSlot.runInfo)
@@ -612,12 +617,10 @@ func (b *Broker) Run() {
 
 			// Find the oldest free DockerRunner slot
 			var oldestRUNNER *BrokerSlot
-			var oldestRUNNERIndex int = -1
 			oldestRUNNERtime := now
-			for index, slot := range b.targetSlots {
+			for _, slot := range b.targetSlots {
 				if slot.state == BrokerSlotStateFree && slot.since < oldestRUNNERtime {
 					oldestRUNNER = slot
-					oldestRUNNERIndex = index
 					oldestRUNNERtime = slot.since
 				}
 			}
@@ -628,7 +631,6 @@ func (b *Broker) Run() {
 				oldestRUNNER.slotType = oldestTCP.slotType
 				oldestRUNNER.since = now
 				oldestTCP.oppositeSlot = oldestRUNNER
-				oldestTCP.oppositeSlotIndex = oldestRUNNERIndex
 
 				// oldestRUNNER.send(NewBrokerMessage(BrokerMessageStart, oldestTCP.runInfo))
 				m := NewBrokerMessage(BrokerMessageStart, oldestTCP.runInfo)
