@@ -451,12 +451,13 @@ func (b *Broker) Run() {
 
 				for _, sourceSlot := range b.sourceSlots {
 					if sourceSlot.state == BrokerSlotStateWait && sourceSlot.slotType == targetSlot.slotType {
-						sourceSlot.state = BrokerSlotStateFree
-						b.freeSourceSlots <- sourceSlot
+						// sourceSlot.state = BrokerSlotStateFree
+						// b.freeSourceSlots <- sourceSlot
 						// sourceSlot.send(NewBrokerMessage(BrokerMessageError, message.PayloadString()))
-						m := NewBrokerMessage(BrokerMessageError, message.PayloadString())
-						sourceSlot.send(m)
-						b.AddLogEntry(m, sourceSlot, b.SourceName, BrokerMessageDirectionSend)
+
+						// m := NewBrokerMessage(BrokerMessageError, message.PayloadString())
+						// sourceSlot.send(m)
+						// b.AddLogEntry(m, sourceSlot, b.SourceName, BrokerMessageDirectionSend)
 					}
 
 				}
@@ -696,6 +697,22 @@ func (b *Broker) Run() {
 				slotD.slotType = ""
 				slotD.since = 7
 			}
+		}
+
+		for _, slot := range b.sourceSlots {
+			if slot.state != BrokerSlotStateWait {
+				continue
+			}
+
+			// source slot waiting
+			if slot.since < (now - int64(b.ReleaseTimeout)) {
+				slot.state = BrokerSlotStateFree
+				b.freeSourceSlots <- slot
+				m := NewBrokerMessage(BrokerMessageError, "wait timeout")
+				slot.send(m)
+				b.AddLogEntry(m, slot, b.SourceName, BrokerMessageDirectionSend)
+			}
+
 		}
 
 		// TODO: piestartē vairākus dokerus ar vienu tipu (ja vienā rindā nāk iekšā daudz uzdevumi ar vienu tipu), ja ir palaisti dokeri ar visiem tipiem
