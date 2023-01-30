@@ -602,8 +602,8 @@ func (b *Broker) Run() {
 
 					// if port number is 3, then respond with error so that client connection gets terminated
 					if containerInfo, ok := waitingSlot.runInfo.(*DockerContainerInfo); ok && containerInfo.port == 3 {
-						b.freeSourceSlots <- waitingSlot
 						waitingSlot.state = BrokerSlotStateFree
+						b.freeSourceSlots <- waitingSlot
 						// waitingSlot.send(NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ"))
 						m := NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ")
 						waitingSlot.send(m)
@@ -656,8 +656,8 @@ func (b *Broker) Run() {
 
 				// if port number is 3, then respond with error so that client connection gets terminated
 				if containerInfo, ok := oldestTCP.runInfo.(*DockerContainerInfo); ok && containerInfo.port == 3 {
-					b.freeSourceSlots <- oldestTCP
 					oldestTCP.state = BrokerSlotStateFree
+					b.freeSourceSlots <- oldestTCP
 					// oldestTCP.send(NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ"))
 					m := NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ")
 					oldestTCP.send(m)
