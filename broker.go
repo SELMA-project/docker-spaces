@@ -137,7 +137,9 @@ func (s *BrokerSlot) JSON() any {
 		RunInfo           any
 		RefInfo           any
 		OppositeSlotIndex int
-	}{s.index, s.state.String(), s.since, s.slotType, s.runInfo, s.refInfo, oppositeSlotIndex}
+		InputQueueLength  int
+		OutputQeueLength  int
+	}{s.index, s.state.String(), s.since, s.slotType, s.runInfo, s.refInfo, oppositeSlotIndex, len(s.input), len(s.output)}
 }
 
 func (s *BrokerSlot) String() string {
@@ -233,6 +235,8 @@ type Broker struct {
 
 	State []byte
 
+	LastBrokerStart int64
+
 	log []*BrokerLogEntry
 }
 
@@ -250,6 +254,8 @@ func (b *Broker) JSON() []byte {
 		targetSlots[i] = slot.JSON()
 	}
 	s := struct {
+		Now            int64
+		LastLoopStart  int64
 		SourceSlots    []any
 		TargetSlots    []any
 		SourceName     string
@@ -257,6 +263,8 @@ func (b *Broker) JSON() []byte {
 		LoopSleep      int
 		ReleaseTimeout int
 	}{
+		time.Now().Unix(),
+		b.LastBrokerStart,
 		sourceSlots,
 		targetSlots,
 		b.SourceName,
@@ -341,6 +349,8 @@ func (b *Broker) Run() {
 	for {
 
 		now := time.Now().Unix()
+
+		b.LastBrokerStart = now
 
 		for _, sourceSlot := range b.sourceSlots {
 			if sourceSlot.empty() /* || sourceSlot.state == BrokerSlotStateFree */ { // GB ignore neizmantotos TCP slotus
