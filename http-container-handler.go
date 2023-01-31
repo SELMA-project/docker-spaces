@@ -250,6 +250,8 @@ func (h *HTTPContainerHandler) ProcessRequest(
 
 	request.UserData = slot
 
+	targetID = "waiting-for-container"
+
 	// slot.Send(NewBrokerMessage(BrokerMessageAcquire, fmt.Sprint("%s:%d", image, port))) // acquire
 	slot.Send(NewBrokerMessage(BrokerMessageAcquire, BrokerAcquireMessageData{slotType, containerInfo})) // acquire
 	message := slot.Read()

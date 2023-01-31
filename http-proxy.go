@@ -213,10 +213,13 @@ func (p *HTTPProxy) TransferChunkForward() (err error) {
 			if level >= 0 && handlerAtLevel != nil {
 				// responded
 				handler := handlerAtLevel
+				p.handler = handler
 				log.Debugf("processing request with handler %s responded at level %d", handler, level)
 				target, targetID, err = handler.ProcessRequest(p.requestHandlerLogger, request, p.target, p.targetID)
 				if err == nil && target != nil {
-					p.handler = handler
+					if len(targetID) == 0 {
+						p.handler = nil
+					}
 					p.requestHandlerLogger.SetTarget(targetID, false)
 					p.responseHandlerLogger.SetTarget(targetID, true)
 				}
