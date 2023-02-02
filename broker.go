@@ -254,17 +254,21 @@ func (b *Broker) JSON() []byte {
 		targetSlots[i] = slot.JSON()
 	}
 	s := struct {
-		Now            int64
-		LastLoopStart  int64
-		SourceSlots    []any
-		TargetSlots    []any
-		SourceName     string
-		TargetName     string
-		LoopSleep      int
-		ReleaseTimeout int
+		Now                      int64
+		LastLoopStart            int64
+		FreeSourceSlotChannelLen int
+		FreeSourceSlotChannelCap int
+		SourceSlots              []any
+		TargetSlots              []any
+		SourceName               string
+		TargetName               string
+		LoopSleep                int
+		ReleaseTimeout           int
 	}{
 		time.Now().Unix(),
 		b.LastBrokerStart,
+		len(b.freeSourceSlots),
+		cap(b.freeSourceSlots),
 		sourceSlots,
 		targetSlots,
 		b.SourceName,
