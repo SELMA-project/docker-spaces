@@ -337,6 +337,14 @@ func (b *Broker) GetTargetSlot() *BrokerSlot {
 	return slot
 }
 
+func (b *Broker) releaseSourceSlot(slot *BrokerSlot) {
+	if slot.state != BrokerSlotStateFree {
+		slot.state = BrokerSlotStateFree
+		b.freeSourceSlots <- slot
+	}
+	return
+}
+
 func yType(slotType string) bool {
 	if len(slotType) > 2 && slotType[0] == 'y' && slotType[1] == ':' {
 		return true
@@ -368,8 +376,9 @@ func (b *Broker) Run() {
 			switch message.Type() {
 			case BrokerMessageRelease:
 				if sourceSlot.state != BrokerSlotStateRun || yType(sourceSlot.slotType) { // GB: yType testu vajag uzprogrammet
-					sourceSlot.state = BrokerSlotStateFree // GB: lai ciklos var atskirt TCPslotus, kas netiek lietoti
-					b.freeSourceSlots <- sourceSlot
+					b.releaseSourceSlot(sourceSlot)
+					// sourceSlot.state = BrokerSlotStateFree // GB: lai ciklos var atskirt TCPslotus, kas netiek lietoti
+					// b.freeSourceSlots <- sourceSlot
 					break
 				}
 				// targetSlot := b.targetSlots[sourceSlot.oppositeIndex]
@@ -386,8 +395,9 @@ func (b *Broker) Run() {
 					// set docker type to none ?
 					// kill docker
 				}
-				sourceSlot.state = BrokerSlotStateFree // GB: lai ciklos var atskirt TCPslotus, kas netiek lietoti
-				b.freeSourceSlots <- sourceSlot
+				// sourceSlot.state = BrokerSlotStateFree // GB: lai ciklos var atskirt TCPslotus, kas netiek lietoti
+				// b.freeSourceSlots <- sourceSlot
+				b.releaseSourceSlot(sourceSlot)
 			case BrokerMessageAcquire:
 				// type acq struct {
 				// 	image string
@@ -617,8 +627,9 @@ func (b *Broker) Run() {
 
 					// if port number is 3, then respond with error so that client connection gets terminated
 					if containerInfo, ok := waitingSlot.runInfo.(*DockerContainerInfo); ok && containerInfo.port == 3 {
-						waitingSlot.state = BrokerSlotStateFree
-						b.freeSourceSlots <- waitingSlot
+						// waitingSlot.state = BrokerSlotStateFree
+						// b.freeSourceSlots <- waitingSlot
+						b.releaseSourceSlot(waitingSlot)
 						// waitingSlot.send(NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ"))
 						m := NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ")
 						waitingSlot.send(m)
@@ -671,8 +682,9 @@ func (b *Broker) Run() {
 
 				// if port number is 3, then respond with error so that client connection gets terminated
 				if containerInfo, ok := oldestTCP.runInfo.(*DockerContainerInfo); ok && containerInfo.port == 3 {
-					oldestTCP.state = BrokerSlotStateFree
-					b.freeSourceSlots <- oldestTCP
+					// oldestTCP.state = BrokerSlotStateFree
+					// b.freeSourceSlots <- oldestTCP
+					b.releaseSourceSlot(oldestTCP)
 					// oldestTCP.send(NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ"))
 					m := NewBrokerMessage(BrokerMessageError, "closing port 3 for RabbitMQ")
 					oldestTCP.send(m)
@@ -720,8 +732,9 @@ func (b *Broker) Run() {
 
 			// source slot waiting
 			if slot.since < (now - int64(b.ReleaseTimeout)) {
-				slot.state = BrokerSlotStateFree
-				b.freeSourceSlots <- slot
+				// slot.state = BrokerSlotStateFree
+				// b.freeSourceSlots <- slot
+				b.releaseSourceSlot(slot)
 				m := NewBrokerMessage(BrokerMessageError, "wait timeout")
 				slot.send(m)
 				b.AddLogEntry(m, slot, b.SourceName, BrokerMessageDirectionSend)
