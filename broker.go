@@ -521,6 +521,8 @@ func (b *Broker) Run() {
 						m := NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo)
 						sourceSlot.send(m)
 						b.AddLogEntry(m, sourceSlot, b.SourceName, BrokerMessageDirectionSend)
+
+						break
 					}
 				}
 
@@ -542,6 +544,8 @@ func (b *Broker) Run() {
 						m := NewBrokerMessage(BrokerMessageAcquired, targetSlot.refInfo)
 						sourceSlot.send(m)
 						b.AddLogEntry(m, sourceSlot, b.SourceName, BrokerMessageDirectionSend)
+
+						break
 					}
 				}
 			}
