@@ -259,10 +259,11 @@ func (h *HTTPContainerHandler) ProcessRequest(
 	log.Debug("TCP end got message:", message)
 
 	var remoteAddress string
+	var refInfo string
 
 	switch message.Type() {
 	case BrokerMessageAcquired:
-		remoteAddress = message.PayloadString()
+		refInfo = message.PayloadString() // refInfo from targetSlot
 	case BrokerMessageError:
 		err = fmt.Errorf("broker error: %v", message.PayloadString())
 		// slot.Send(NewBrokerMessage(BrokerMessageRelease, false))
@@ -275,6 +276,25 @@ func (h *HTTPContainerHandler) ProcessRequest(
 	// activityNotifier := func() {
 	// 	slot.Send(NewBrokerMessage(BrokerMessageRelease, false))
 	// }
+
+	args := map[string]string{}
+
+	ps := strings.SplitN(refInfo, ";", 2)
+
+	remoteAddress = ps[0]
+
+	if len(ps) > 1 {
+		s := ps[1]
+
+		argDefs := strings.Split(s, ";")
+
+		for _, argDef := range argDefs {
+			kv := strings.SplitN(argDef, "=", 2)
+			args[kv[0]] = kv[1]
+		}
+	}
+
+	// args: key-value (string->string) extra argument storage
 
 	if len(remoteAddress) == 0 {
 		err = fmt.Errorf("target not found")

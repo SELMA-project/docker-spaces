@@ -472,8 +472,22 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 
 	remoteAddress := fmt.Sprintf("%s:%d", r.docker.host, r.containerPort)
 
+	args := map[string]string{}
+
+	if r.gpu > 0 {
+		args["gpu"] = strconv.Itoa(r.gpu - 1)
+	}
+
+	refInfo := remoteAddress
+
+	if len(args) > 0 {
+		for k, v := range args {
+			refInfo += ";" + k + "=" + v
+		}
+	}
+
 	// init
-	slot.Send(NewBrokerMessage(BrokerMessageFree, remoteAddress)) // refInfo = remoteAddress
+	slot.Send(NewBrokerMessage(BrokerMessageFree, refInfo))
 
 	for !r.stop {
 		// log.Trace("docker-runner: run: loop")
