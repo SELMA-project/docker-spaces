@@ -65,9 +65,11 @@ Experimental DockerSpaces-NG version supporting complete frontend pipelines is a
 To test, run:
 
 ```
-docker run --restart=always -d -v /var/run/docker.sock:/var/run/docker.sock -p 12555:8888 -it selmaproject/docker-spaces:next3 -user yourname -password yourpassword -start-port 12440 -source 15 -target 15 -cors
+docker run --restart=always -d -v /var/run/docker.sock:/var/run/docker.sock -p 12555:8888 -it selmaproject/docker-spaces:next3 -user yourname -password yourpassword -start-port 12440 -source 15 -gpu 2 -target 4 -cors
 ```
 and then go to URL http://localhost:12555
 The frontend pipeline there is demonstrated via WHISPER button (other buttons still use a shared backend container)
+
+Note: set the parameter "-gpu 2" to 0 if you do not have any GPU, or your CUDA version does not match requirements of CUDA-enabled Docker containers. This parameter tells how many GPUs on your computer should be used by DockerSpaces. Each GPU can be assigned several CUDA-enabled Docker images in round-robin fashion, if GPU RAM capacity is sufficient. DockerSpaces assumes that a CUDA-enabled docker container will not start (will produce an error) if there is not sufficient amount of free RAM on GPU - please ensure that your CUDA-enabled containers do not request additional GPU RAM later in their lifetime (potentially causig no-RAM crash and loss of data being processed).
 
 Note: "docker update --restart=always container-id" can be applied also on an already running container, to make it restart automatically on re-boot. This closely simulates a virtual machine with permanet storage.
