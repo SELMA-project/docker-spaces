@@ -101,7 +101,13 @@ func brokerTargetResolverParseURLPath(path string) (pathRewrite string, yType bo
 		envDefs := strings.Split(ps[5], ";")
 		for _, envDef := range envDefs {
 			kv := strings.SplitN(envDef, "=", 2)
-			envs[kv[0]] = kv[1]
+			decoded, err := url.QueryUnescape(kv[1])
+			if err != nil {
+				fmt.Printf("warning: unable to URL decode environment value %s=%s", kv[0], kv[1])
+				envs[kv[0]] = kv[1]
+			} else {
+				envs[kv[0]] = decoded
+			}
 		}
 	}
 
