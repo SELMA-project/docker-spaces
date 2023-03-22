@@ -263,7 +263,6 @@ func (r *DockerRunner) start(image string, internalPort int, envs map[string]str
 	response, err = r.docker.Post("/containers/"+id+"/start", nil, nil, nil)
 	if err != nil {
 		// TODO: auto or manual remove?
-		log.Error("docker-runner: start: error on start request", err.Error())
 		return
 	}
 
