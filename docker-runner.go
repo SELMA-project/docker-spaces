@@ -116,7 +116,6 @@ func (r *DockerRunner) kill() (err error) {
 func (r *DockerRunner) start(image string, internalPort int, envs map[string]string) (err error) {
 
 	for k, v := range envs {
-		log.Info("docker-runner: env: ", k, v)
 		decodedValue, err := url.QueryUnescape(v)
 		//If it didn't error, update the value. Leave otherwise
 		if err == nil {
@@ -396,6 +395,7 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 	log.Info("docker-runner: run: starting docker runner")
 
 	remoteAddress := fmt.Sprintf("%s:%d", r.docker.host, r.containerPort)
+
 	// init
 	slot.Send(NewBrokerMessage(BrokerMessageFree, remoteAddress)) // refInfo = remoteAddress
 
