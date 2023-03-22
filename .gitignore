@@ -1,0 +1,4 @@
+#Ignore local go build
+docker-spaces
+
+.vscode

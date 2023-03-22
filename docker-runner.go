@@ -115,6 +115,14 @@ func (r *DockerRunner) kill() (err error) {
 
 func (r *DockerRunner) start(image string, internalPort int, envs map[string]string) (err error) {
 
+	for k, v := range envs {
+		log.Info("docker-runner: env: ", k, v)
+		decodedValue, err := url.QueryUnescape(v)
+		//If it didn't error, update the value. Leave otherwise
+		if err == nil {
+			envs[k] = decodedValue
+		}
+	}
 	// check if some container is using our external port, if so - kill it
 
 	err = r.kill()
@@ -255,6 +263,7 @@ func (r *DockerRunner) start(image string, internalPort int, envs map[string]str
 	response, err = r.docker.Post("/containers/"+id+"/start", nil, nil, nil)
 	if err != nil {
 		// TODO: auto or manual remove?
+		log.Error("docker-runner: start: error on start request", err.Error())
 		return
 	}
 
@@ -388,7 +397,6 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 	log.Info("docker-runner: run: starting docker runner")
 
 	remoteAddress := fmt.Sprintf("%s:%d", r.docker.host, r.containerPort)
-
 	// init
 	slot.Send(NewBrokerMessage(BrokerMessageFree, remoteAddress)) // refInfo = remoteAddress
 
