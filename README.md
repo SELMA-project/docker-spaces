@@ -4,15 +4,6 @@ Run
 
 ```
 ./docker-spaces -p 8888 -docker DOCKER-ENGINE-URL --user USER --password PASSWORD
-./docker-spaces -p 8888 -registry https://dockers.priberam.com --user dev --password VYD7C.KU#IPO-5ex
-
-./docker-spaces -p 1100 -registry https://dockers.priberam.com --user dev --password VYD7C.KU#IPO-5ex -source 10 -cluster 19100:5:http://172.25.1.547878/docker:local -cluster 12100:5:unix:///var/run/docker.sock
-
-localhost:8888/x:dockers.priberam.com:postgres:12:3/
-
-http://localhost:8888/x:dockers.priberam.com:worker-sidecar:dockerspaces:3:RabbitMQ__Url=amqp%3A%2F%2F172.25.1.54%3A8672;SidecarWorker__WorkerType=FullReindexer;ReindexerSettings__Url=http%3A%2F%2Fpbanet05-22.interno.priberam.pt%3A80%2F;ReindexerSettings__Scenario=SUNSET6;InputQueue__Name=Indexer.en/
-
-http://localhost:8888/x:dockers.priberam.com:docker-tutorial:0.0.1:5006/
 ```
 
 where DOCKER-ENGINE-URL is in any form of
