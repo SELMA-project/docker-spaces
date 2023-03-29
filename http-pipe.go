@@ -227,7 +227,7 @@ func (p *HTTPPipe) ParseResponse() (response *ParsedHTTPResponse, err error) {
 	if response.StatusCode == 204 && len(contentLength) == 0 && response.VersionMajor == 1 && response.VersionMinor == 1 {
 		p.state = HTTPReaderStateHead
 		p.bodyToRead = 0
-	} else if len(contentLength) == 0 && response.VersionMajor == 1 && response.VersionMinor == 1 || transferEncoding == "chunked" {
+	} else if len(contentLength) == 0 && response.VersionMajor == 1 && response.VersionMinor == 1 && transferEncoding == "chunked" {
 		p.state = HTTPReaderStateChunkedBody
 		p.bodyToRead = 0
 	} else if response.StatusCode == 204 {
