@@ -55,12 +55,15 @@ type BrokerTargetResolver struct {
 }
 
 type DockerContainerInfo struct {
-	image string
-	port  int
-	gpu   bool
-	envs  map[string]string
-	Type  string
-	tls   bool
+	image            string
+	port             int
+	gpu              bool
+	envs             map[string]string
+	Type             string
+	tls              bool
+	registryAddress  string
+	registryUser     string
+	registryPassword string
 }
 
 func brokerTargetResolverParseURLPath(path string) (pathRewrite string, yType bool, info *DockerContainerInfo, err error) {

@@ -653,7 +653,8 @@ func (h *HTTPContainerHandler) parseURLPath(path string) (pathRewrite string, in
 
 		// assert pathParts[0] == "" // not absolute path
 
-		ps := strings.SplitN(pathParts[1], ":", 6)
+		// ps := strings.SplitN(pathParts[1], ":", 6)
+		ps := strings.Split(pathParts[1], ":")
 
 		// /x:registry:repo:tag:port/...
 		if len(ps) < 5 {
@@ -663,13 +664,23 @@ func (h *HTTPContainerHandler) parseURLPath(path string) (pathRewrite string, in
 
 		envs := map[string]string{}
 
-		if len(ps) == 6 {
+		if len(ps) >= 6 && len(strings.TrimSpace(ps[5])) > 0 {
 			envDefs := strings.Split(ps[5], ";")
 			for _, envDef := range envDefs {
+				envDef = strings.TrimSpace(envDef)
+				if len(envDef) == 0 {
+					continue
+				}
 				kv := strings.SplitN(envDef, "=", 2)
+				kv[0] = strings.TrimSpace(kv[0])
+				if len(kv[0]) == 0 {
+					fmt.Printf("warning: empty environment name")
+					continue
+				}
+				kv[1] = strings.TrimSpace(kv[1])
 				decoded, err := url.QueryUnescape(kv[1])
 				if err != nil {
-					fmt.Printf("warning: unable to URL decode environment value %s=%s", kv[0], kv[1])
+					fmt.Printf("warning: unable to URL decode environment value %s=%s: %v", kv[0], kv[1], err)
 					envs[kv[0]] = kv[1]
 				} else {
 					envs[kv[0]] = decoded
@@ -677,9 +688,29 @@ func (h *HTTPContainerHandler) parseURLPath(path string) (pathRewrite string, in
 			}
 		}
 
+		var user string
+		var password string
+
+		if len(ps) >= 8 {
+			var err error
+			// user:password
+			user, err = url.QueryUnescape(strings.TrimSpace(ps[6]))
+			if err != nil {
+				fmt.Printf("warning: unable to URL decode registry user name %s: %v", ps[6], err)
+			}
+			password, err = url.QueryUnescape(strings.TrimSpace(ps[7]))
+			if err != nil {
+				fmt.Printf("warning: unable to URL decode registry password %s: %v", ps[7], err)
+			}
+		}
+
 		image := fmt.Sprintf("%s/%s:%s", ps[1], ps[2], ps[3])
 
 		info = &DockerContainerInfo{}
+
+		info.registryAddress = ps[1]
+		info.registryUser = user
+		info.registryPassword = password
 
 		info.image = image
 

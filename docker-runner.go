@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"time"
@@ -188,7 +189,7 @@ func (r *DockerRunner) running() (running bool, err error) {
 	return
 }
 
-func (r *DockerRunner) start(image string, internalPort int, envs map[string]string) (err error) {
+func (r *DockerRunner) start(image string, internalPort int, envs map[string]string, auth *DockerAuth) (err error) {
 
 	// check if some container is using our external port, if so - kill it
 
@@ -202,8 +203,17 @@ func (r *DockerRunner) start(image string, internalPort int, envs map[string]str
 
 	var id string
 
+	var headers http.Header
+
+	if auth != nil {
+		log.Trace("docker-runner: start: preparing headers with auth info")
+		// headers = http.Header{"X-Registry-Auth": []string{auth.Encode(}}
+		headers = http.Header{}
+		headers.Set("X-Registry-Auth", auth.Encode())
+	}
+
 	// pull the image first
-	response, err := r.docker.Post("/images/create", &url.Values{"fromImage": []string{image}}, nil, nil)
+	response, err := r.docker.Post("/images/create", &url.Values{"fromImage": []string{image}}, headers, nil)
 	if err != nil {
 		return
 	}
@@ -503,11 +513,18 @@ func (r *DockerRunner) Run(slot *BrokerSlot) {
 
 			containerInfo := message.Payload().(*DockerContainerInfo)
 
+			var auth *DockerAuth
+
+			if len(containerInfo.registryUser) > 0 && len(containerInfo.registryPassword) > 0 {
+				log.Info("docker-runner: run: got container registry auth info")
+				auth = &DockerAuth{Username: containerInfo.registryUser, Password: containerInfo.registryPassword, ServerAddress: containerInfo.registryAddress}
+			}
+
 			log.Trace("docker-runner: run: start message container info:", containerInfo)
 
 			log.Info("docker-runner: run: starting container")
 
-			err := r.start(containerInfo.image, containerInfo.port, containerInfo.envs)
+			err := r.start(containerInfo.image, containerInfo.port, containerInfo.envs, auth)
 			if err != nil {
 				log.Debug("docker-runner: run: start container error:", err)
 				slot.Send(NewBrokerMessage(BrokerMessageError, err.Error()))

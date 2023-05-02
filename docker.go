@@ -498,11 +498,11 @@ func (d *Docker) callRaw(method string, api string, headers http.Header, content
 			}
 		}
 	}
-	if len(d.authHeader) > 0 {
-		request.Header.Add("X-Registry-Auth", d.authHeader)
+	if len(d.authHeader) > 0 && len(request.Header.Values("X-Registry-Auth")) == 0 {
+		request.Header.Set("X-Registry-Auth", d.authHeader)
 	}
 	if len(contentType) > 0 {
-		request.Header.Add("Content-Type", contentType)
+		request.Header.Set("Content-Type", contentType)
 	}
 	response, err = d.client.Do(request)
 	// if err != nil {
