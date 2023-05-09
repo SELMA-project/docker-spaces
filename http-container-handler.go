@@ -461,7 +461,8 @@ func (h *HTTPContainerHandler) ProcessResponse(logger *ProxyLogger, response *Pa
 		// rewrite to --> proxyhost/http[s]:targethost/target/host/path
 		location := response.Headers.Get("Location")
 		if len(location) > 0 {
-			u, err := url.Parse(location)
+			// u, err := url.Parse(location)
+			u, err := parseURLWithRelativeHost(location, request.Headers.Get("Host"))
 			if err != nil {
 				log.Debug("warning, unable to parse Location header value:", err)
 			} else if len(u.Host) > 0 {
