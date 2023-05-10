@@ -387,7 +387,7 @@ func (p *HTTPProxy) TransferChunkBackward() (err error) {
 			break
 		}
 
-		if p.backward.StartHead() {
+		if p.backward.StartHead() && p.response != nil {
 			// for retained handler, request and response call ResponseTransferred()
 			if p.handler != nil {
 				p.handler.ResponseTransferred(p.responseHandlerLogger, p.response.Request, p.response)

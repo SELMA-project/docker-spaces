@@ -136,6 +136,12 @@ func (p *HTTPPipe) ParseRequest() (request *ParsedHTTPRequest, err error) {
 	// log.Trace("got data:", string(p.input.Bytes()), p.input.Bytes(), p.input.Len())
 	log.Trace("got data size:", p.input.Len())
 	// log.Trace("got data:", string(p.input.Bytes()))
+
+	if p.state != HTTPReaderStateHead && p.state != HTTPReaderStateIncompleteHead {
+		// we do not expect header data
+		return
+	}
+
 	request, err = ParseHTTPRequest(p.input.Bytes())
 	if err != nil {
 		err = fmt.Errorf("error parsing HTTP request: %w", err)
@@ -207,6 +213,12 @@ func (p *HTTPPipe) ParseResponse() (response *ParsedHTTPResponse, err error) {
 	// log.Trace("got data:", string(p.input.Bytes()), p.input.Bytes(), p.input.Len())
 	log.Trace("got data size:", p.input.Len())
 	// log.Trace("response data:", string(p.input.Bytes()))
+
+	if p.state == HTTPReaderStateHead && p.input.Len() == 0 {
+		log.Trace("no data, wait for more")
+		return
+	}
+
 	response, err = ParseHTTPResponse(p.input.Bytes())
 	if err != nil {
 		err = fmt.Errorf("error parsing HTTP response: %w", err)
