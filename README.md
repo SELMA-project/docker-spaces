@@ -73,3 +73,8 @@ The frontend pipeline there is demonstrated via WHISPER button (other buttons st
 Note: set the parameter "-gpu 2" to 0 if you do not have any GPU, or your CUDA version does not match requirements of CUDA-enabled Docker containers. This parameter tells how many GPUs on your computer should be used by DockerSpaces. Each GPU can be assigned several CUDA-enabled Docker images in round-robin fashion, if GPU RAM capacity is sufficient. DockerSpaces assumes that a CUDA-enabled docker container will not start (will produce an error) if there is not sufficient amount of free RAM on GPU - please ensure that your CUDA-enabled containers do not request additional GPU RAM later in their lifetime (potentially causig no-RAM crash and loss of data being processed).
 
 Note: "docker update --restart=always container-id" can be applied also on an already running container, to make it restart automatically on re-boot. This closely simulates a virtual machine with permanet storage.
+
+Note: support for multiple image repositories with individual user/password added via extended URL. To use this feature, replace all uses of ":" in the ENV section by replacing them with "%3A".  Example:
+http://localhost:8888/x:dockers.iber.com:worker:0.2.2:3:RabbitMQ__Url=192.25.1.54%3A8672;SidecarWorker__WorkerType=NLLB;SidecarWorker__NLLBSettings__RequestUrl=http%3A%2F%2Fgpusrv.interno.iber.pt%3A6428%2Ftranslate;InputQueue__Name=NLLB.Translation:MyUsername:MyPassword/ 
+
+
