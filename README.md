@@ -58,7 +58,7 @@ to `~/.bashrc` or `~/.zshenv`.
 The REST API call must be triggered by external code upon sensing a non-empty RabbitMQ queue via PEEK or other means. The REST API call will return an empty response as soon as the new worker is launched. If docker-spaces is short of resources, this call may stay open for up to 30 minutes while waiting for resources to appear (in this case it is up to the external code to decide how long to wait for the resources to not be too greedy with respect to other queues, which might also be waiting for resources). 
 * The above described RabbitMQ worker scaling feature (specifyinig port "3") can be used also for other purposes, e.g., for running batch-jobs such as neural network training (with or without GPU), as jobs started in this manner are guaranteed to run for the duration specified in the "-release" command-line parameter (default is 1800 seconds = 30 minutes), which in this use-case might need to be set to a higher value. 
 
-# Experimental
+# Experimental (NEXT branch only)
 
 Experimental DockerSpaces-NG version supporting complete frontend pipelines is available as docker image. This docker image besides DockerSpaces includes also a web-server (PiniTree server) from where the initial frontend webpage is loaded.
 
