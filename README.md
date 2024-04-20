@@ -13,12 +13,7 @@ where DOCKER-ENGINE-URL is in any form of
 
 Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://localhost:8888/x:selmaproject:tts:777:5002/)
 
-# ToDo
-
-### Debugging
-
-
-### Features
+# Features
 
 * [x] Scaling on multiple hosts in the cluster, example:  `./docker-spaces.linux.x86_64 -p 1100 -source 500 -cluster 19100:50:http://111.111.111.111:7878/docker:local -cluster 12100:5:unix:///var/run/docker.sock`
 
