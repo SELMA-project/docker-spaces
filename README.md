@@ -33,9 +33,6 @@ Open browser to [http://localhost:8888/x:selmaproject:tts:777:5002/](http://loca
 
 * [x] Monitoring of the Docker-spaces internal resource broker added: http://localhost:8888/monitor:broker/ (returns a JSON)
 
-* [ ] SQLite DB for accounts (2022spaces), state, config, docker-compose
-
-
 
 ### Considerations
 
