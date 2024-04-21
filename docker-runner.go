@@ -115,6 +115,13 @@ func (r *DockerRunner) kill() (err error) {
 
 func (r *DockerRunner) start(image string, internalPort int, envs map[string]string) (err error) {
 
+	for k, v := range envs {
+		decodedValue, err := url.QueryUnescape(v)
+		//If it didn't error, update the value. Leave otherwise
+		if err == nil {
+			envs[k] = decodedValue
+		}
+	}
 	// check if some container is using our external port, if so - kill it
 
 	err = r.kill()
